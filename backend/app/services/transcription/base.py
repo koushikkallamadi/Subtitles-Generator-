@@ -22,6 +22,8 @@ class TranscriptionResult(BaseModel):
     provider: str
     fallback_occurred: bool = False
     fallback_message: Optional[str] = None
+    route_used: Optional[str] = None
+    timestamps_estimated: bool = False
 
 class BaseTranscriptionProvider(ABC):
     @property

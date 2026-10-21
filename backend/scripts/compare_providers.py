@@ -14,6 +14,11 @@ import argparse
 import asyncio
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import functools
 print = functools.partial(print, flush=True)
 
@@ -26,6 +31,7 @@ from app.services.media import extract_audio, get_media_duration
 from app.services.transcription.sarvam import SarvamProvider
 from app.services.transcription.groq import GroqProvider
 from app.services.transcription.local_whisper import LocalProvider
+from app.services.transcription.romanizer import apply_romanization_if_needed
 from app.services.segmentation import cues_from_transcription
 
 async def run_comparison(media_path: str, language: str = "hi", style: str = "roman"):
@@ -82,13 +88,17 @@ async def run_comparison(media_path: str, language: str = "hi", style: str = "ro
                 language=language,
                 style=style,
             )
+            res = await apply_romanization_if_needed(res, style=style, language=language)
             elapsed = time.time() - start_time
             cues = cues_from_transcription(res)
 
-            print(f"  Status   : SUCCESS in {elapsed:.2f}s")
-            print(f"  Text     : {res.text}")
-            print(f"  Words    : {len(res.words)} words detected")
-            print(f"  Cues     : {len(cues)} subtitle cues generated")
+            route_str = f" ({res.route_used})" if getattr(res, "route_used", None) else ""
+            ts_type = "ESTIMATED (spread across chunk/audio)" if getattr(res, "timestamps_estimated", False) else "REAL (word-level from provider)"
+            print(f"  Status     : SUCCESS{route_str} in {elapsed:.2f}s")
+            print(f"  Timestamps : {ts_type}")
+            print(f"  Text       : {res.text}")
+            print(f"  Words      : {len(res.words)} words detected")
+            print(f"  Cues       : {len(cues)} subtitle cues generated")
             print(f"  Timings (first 5 words):")
             for w in res.words[:5]:
                 print(f"    [{w.start:.2f}s -> {w.end:.2f}s] {w.text}")
@@ -98,6 +108,8 @@ async def run_comparison(media_path: str, language: str = "hi", style: str = "ro
                 "label": label,
                 "status": "SUCCESS",
                 "elapsed": elapsed,
+                "route_used": getattr(res, "route_used", None),
+                "timestamps_type": ts_type,
                 "text": res.text,
                 "word_count": len(res.words),
                 "cue_count": len(cues),
@@ -124,7 +136,9 @@ async def run_comparison(media_path: str, language: str = "hi", style: str = "ro
     for r in results:
         status = r["status"]
         if status == "SUCCESS":
-            print(f"[{r['name'].upper()}] - Time: {r['elapsed']:.2f}s | Words: {r['word_count']} | Cues: {r['cue_count']}")
+            route_info = f" ({r.get('route_used')})" if r.get('route_used') else ""
+            print(f"[{r['name'].upper()}{route_info}] - Time: {r['elapsed']:.2f}s | Words: {r['word_count']} | Cues: {r['cue_count']}")
+            print(f"  Timestamps: {r.get('timestamps_type', 'N/A')}")
             print(f"  Text: {r['text'][:120]}..." if len(r['text']) > 120 else f"  Text: {r['text']}")
         else:
             print(f"[{r['name'].upper()}] - {status}: {r.get('error', '')}")

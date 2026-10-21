@@ -2,8 +2,9 @@ import os
 import json
 import logging
 import asyncio
+import tempfile
 import httpx
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from app.core.settings import settings
 from app.services.transcription.base import (
     BaseTranscriptionProvider,
@@ -11,7 +12,7 @@ from app.services.transcription.base import (
     WordTimestamp,
     Segment,
 )
-from app.services.media import get_media_duration, chunk_audio
+from app.services.media import get_media_duration, chunk_audio, extract_audio
 
 logger = logging.getLogger(__name__)
 
@@ -83,13 +84,80 @@ class SarvamProvider(BaseTranscriptionProvider):
             current_time = w_end
         return word_list
 
+    def _parse_timestamps(
+        self,
+        timestamps_data: Optional[dict],
+        raw_words: Optional[list],
+        transcript: str,
+        time_offset: float,
+        duration: float,
+    ) -> Tuple[List[WordTimestamp], bool]:
+        """
+        Parses timestamps from Sarvam API response.
+        Returns (words, timestamps_estimated).
+        """
+        words: List[WordTimestamp] = []
+        timestamps_estimated = False
+
+        if isinstance(timestamps_data, dict) and "words" in timestamps_data:
+            chunk_texts = timestamps_data.get("words", [])
+            starts = timestamps_data.get("start_time_seconds", [])
+            ends = timestamps_data.get("end_time_seconds", [])
+
+            # Check if Sarvam returned chunk-level entries (strings with spaces) or individual words
+            has_multiword_chunks = any(" " in str(c).strip() for c in chunk_texts if c)
+
+            if has_multiword_chunks:
+                timestamps_estimated = True
+                logger.warning(
+                    f"[TIMESTAMPS ESTIMATED] Sarvam returned chunk-level segments ({len(chunk_texts)} chunks). "
+                    "Estimating word-level timestamps across chunks."
+                )
+                for i, chunk_txt in enumerate(chunk_texts):
+                    if not chunk_txt:
+                        continue
+                    c_start = (float(starts[i]) if i < len(starts) else 0.0) + time_offset
+                    c_end = (float(ends[i]) if i < len(ends) else c_start + 1.0) + time_offset
+                    chunk_word_objs = self._estimate_word_timings(str(chunk_txt), c_start, c_end)
+                    words.extend(chunk_word_objs)
+            else:
+                # Real word-level timestamps
+                for i, w in enumerate(chunk_texts):
+                    if w and str(w).strip():
+                        w_start = (float(starts[i]) if i < len(starts) else 0.0) + time_offset
+                        w_end = (float(ends[i]) if i < len(ends) else w_start + 0.3) + time_offset
+                        words.append(
+                            WordTimestamp(text=str(w).strip(), start=round(w_start, 3), end=round(w_end, 3))
+                        )
+                logger.info(f"[TIMESTAMPS REAL] Sarvam returned {len(words)} real word-level timestamps.")
+
+        elif raw_words and isinstance(raw_words, list) and len(raw_words) > 0 and isinstance(raw_words[0], dict):
+            for item in raw_words:
+                w_text = item.get("word") or item.get("text", "")
+                w_start = float(item.get("start_time", item.get("start", 0.0))) + time_offset
+                w_end = float(item.get("end_time", item.get("end", w_start + 0.3))) + time_offset
+                if w_text.strip():
+                    words.append(
+                        WordTimestamp(text=w_text.strip(), start=round(w_start, 3), end=round(w_end, 3))
+                    )
+            logger.info(f"[TIMESTAMPS REAL] Sarvam returned {len(words)} real word-level timestamps.")
+        else:
+            timestamps_estimated = True
+            logger.warning(
+                f"[TIMESTAMPS ESTIMATED] Sarvam returned no word-level timestamps. "
+                "Estimating word timings across full audio duration."
+            )
+            words = self._estimate_word_timings(transcript, time_offset, time_offset + duration)
+
+        return words, timestamps_estimated
+
     async def _transcribe_sync_chunk(
         self,
         chunk_path: str,
         time_offset: float,
         language_code: str,
         mode: str,
-    ) -> tuple[str, List[WordTimestamp], List[Segment]]:
+    ) -> Tuple[str, List[WordTimestamp], List[Segment], bool]:
         """Call Sarvam synchronous /speech-to-text endpoint for a single chunk <= 30s."""
         url = "https://api.sarvam.ai/speech-to-text"
         headers = {
@@ -114,7 +182,6 @@ class SarvamProvider(BaseTranscriptionProvider):
             response = await client.post(url, headers=headers, data=data, files=files)
 
         if response.status_code != 200:
-            # Fallback model trial if saaras:v4 is unavailable
             if "model" in response.text.lower():
                 data["model"] = "saaras:v3"
                 async with httpx.AsyncClient(timeout=60.0) as client:
@@ -126,39 +193,35 @@ class SarvamProvider(BaseTranscriptionProvider):
         res_data = response.json()
         transcript = res_data.get("transcript", "").strip()
 
-        chunk_words: List[WordTimestamp] = []
-        chunk_segments: List[Segment] = []
+        # If transcribe mode returned empty string, try codemix
+        if not transcript and mode == "transcribe":
+            logger.info("Sarvam transcribe mode returned empty transcript; retrying with codemix mode...")
+            data["mode"] = "codemix"
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                res2 = await client.post(url, headers=headers, data=data, files=files)
+            if res2.status_code == 200:
+                res_data = res2.json()
+                transcript = res_data.get("transcript", "").strip()
 
-        # Check for word-level timestamps in response
-        raw_words = res_data.get("words") or res_data.get("timestamps") or []
         chunk_duration = get_media_duration(chunk_path) or 10.0
-
-        if raw_words and isinstance(raw_words, list) and isinstance(raw_words[0], dict):
-            for item in raw_words:
-                w_text = item.get("word") or item.get("text", "")
-                w_start = float(item.get("start_time", item.get("start", 0.0))) + time_offset
-                w_end = float(item.get("end_time", item.get("end", w_start + 0.3))) + time_offset
-                if w_text.strip():
-                    chunk_words.append(
-                        WordTimestamp(text=w_text.strip(), start=round(w_start, 3), end=round(w_end, 3))
-                    )
-        else:
-            # Estimate word timings by spreading across segment duration
-            logger.info(
-                f"[FLAG] Sarvam response for chunk at {time_offset:.2f}s had no word-level timestamps. "
-                "Estimating word timings across chunk duration."
-            )
-            chunk_words = self._estimate_word_timings(
-                transcript, time_offset, time_offset + chunk_duration
-            )
-
-        seg_start = time_offset
-        seg_end = time_offset + chunk_duration
-        chunk_segments.append(
-            Segment(start=seg_start, end=seg_end, text=transcript, words=chunk_words)
+        words, timestamps_estimated = self._parse_timestamps(
+            res_data.get("timestamps"),
+            res_data.get("words"),
+            transcript,
+            time_offset,
+            chunk_duration,
         )
 
-        return transcript, chunk_words, chunk_segments
+        chunk_segments = [
+            Segment(
+                start=time_offset,
+                end=time_offset + chunk_duration,
+                text=transcript,
+                words=words,
+            )
+        ]
+
+        return transcript, words, chunk_segments, timestamps_estimated
 
     async def _transcribe_batch_api(
         self,
@@ -166,78 +229,184 @@ class SarvamProvider(BaseTranscriptionProvider):
         language_code: str,
         mode: str,
     ) -> Optional[TranscriptionResult]:
-        """Attempt Sarvam Batch API job creation and polling."""
-        url = "https://api.sarvam.ai/speech-to-text/job/v1"
+        """
+        Sarvam Batch Speech-to-Text API:
+        1. POST /speech-to-text/job/v1 (JSON body)
+        2. POST /speech-to-text/job/v1/upload-files (JSON body)
+        3. PUT audio file to presigned URL
+        4. POST /speech-to-text/job/v1/{job_id}/start
+        5. Poll /speech-to-text/job/v1/{job_id}/status
+        6. POST /speech-to-text/job/v1/download-files
+        """
+        api_key = settings.SARVAM_API_KEY.strip()
         headers = {
-            "api-subscription-key": settings.SARVAM_API_KEY.strip(),
+            "api-subscription-key": api_key,
+            "Content-Type": "application/json",
         }
 
         try:
-            with open(audio_path, "rb") as f:
-                file_bytes = f.read()
-
-            filename = os.path.basename(audio_path)
-            data = {
-                "model": "saaras:v4",
-                "mode": mode,
-                "language_code": language_code,
-                "with_timestamps": "true",
+            # 1. Create bulk job with correct JSON payload
+            job_payload = {
+                "job_parameters": {
+                    "model": "saaras:v4",
+                    "mode": mode,
+                    "with_timestamps": True,
+                    "with_diarization": False,
+                    "language_code": language_code,
+                }
             }
-            files = {
-                "file": (filename, file_bytes, "audio/mpeg"),
-            }
+            logger.info("Submitting Sarvam batch job request...")
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                res_create = await client.post(
+                    "https://api.sarvam.ai/speech-to-text/job/v1",
+                    headers=headers,
+                    json=job_payload,
+                )
 
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                res = await client.post(url, headers=headers, data=data, files=files)
-
-            if res.status_code not in (200, 201, 202):
-                logger.warning(f"Sarvam batch job submission returned {res.status_code}: {res.text}")
+            if res_create.status_code not in (200, 201, 202):
+                logger.warning(
+                    f"Sarvam batch job submission returned {res_create.status_code}: body: {res_create.text}"
+                )
                 return None
 
-            job_info = res.json()
-            job_id = job_info.get("job_id") or job_info.get("id")
+            job_data = res_create.json()
+            job_id = job_data.get("job_id")
             if not job_id:
+                logger.warning("No job_id in Sarvam batch job response.")
                 return None
 
-            # Poll for completion (up to 90s)
-            poll_url = f"{url}/{job_id}"
-            for _ in range(30):
-                await asyncio.sleep(3)
+            logger.info(f"Sarvam batch job created: {job_id}")
+
+            # 2. Get presigned upload URL
+            filename = os.path.basename(audio_path)
+            upload_payload = {"job_id": job_id, "files": [filename]}
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                res_upload = await client.post(
+                    "https://api.sarvam.ai/speech-to-text/job/v1/upload-files",
+                    headers=headers,
+                    json=upload_payload,
+                )
+
+            if res_upload.status_code != 200:
+                logger.warning(f"Sarvam batch upload-files returned {res_upload.status_code}: {res_upload.text}")
+                return None
+
+            upload_urls = res_upload.json().get("upload_urls", {})
+            file_meta = upload_urls.get(filename)
+            if not file_meta or "file_url" not in file_meta:
+                logger.warning(f"Missing file_url in Sarvam upload-files response for {filename}")
+                return None
+
+            presigned_put_url = file_meta["file_url"]
+
+            # 3. Upload audio file content to presigned URL
+            with open(audio_path, "rb") as f:
+                audio_bytes = f.read()
+
+            content_type = "audio/wav" if filename.endswith(".wav") else "audio/mpeg"
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                res_put = await client.put(
+                    presigned_put_url,
+                    content=audio_bytes,
+                    headers={"Content-Type": content_type},
+                )
+
+            if res_put.status_code not in (200, 201, 204):
+                logger.warning(f"Sarvam S3 upload failed with status {res_put.status_code}")
+                return None
+
+            logger.info(f"Uploaded audio ({len(audio_bytes)} bytes) to Sarvam S3 storage.")
+
+            # 4. Start the job
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                res_start = await client.post(
+                    f"https://api.sarvam.ai/speech-to-text/job/v1/{job_id}/start",
+                    headers=headers,
+                )
+
+            if res_start.status_code != 200:
+                logger.warning(f"Sarvam batch job start returned {res_start.status_code}: {res_start.text}")
+                return None
+
+            logger.info(f"Sarvam batch job {job_id} started successfully. Polling for results...")
+
+            # 5. Poll for completion (up to 120s)
+            status_url = f"https://api.sarvam.ai/speech-to-text/job/v1/{job_id}/status"
+            job_details = None
+            for poll_idx in range(40):
+                await asyncio.sleep(3.0)
                 async with httpx.AsyncClient(timeout=30.0) as client:
-                    poll_res = await client.get(poll_url, headers=headers)
+                    poll_res = await client.get(status_url, headers={"api-subscription-key": api_key})
+
                 if poll_res.status_code == 200:
                     poll_data = poll_res.json()
-                    status = (poll_data.get("status") or "").lower()
-                    if status in ("completed", "done", "success"):
-                        # Process results
-                        result_data = poll_data.get("result") or poll_data
-                        transcript = result_data.get("transcript", "")
-                        words: List[WordTimestamp] = []
-                        if "words" in result_data:
-                            for w in result_data["words"]:
-                                words.append(
-                                    WordTimestamp(
-                                        text=w.get("word") or w.get("text", ""),
-                                        start=float(w.get("start", 0)),
-                                        end=float(w.get("end", 0)),
-                                    )
-                                )
-                        else:
-                            total_dur = get_media_duration(audio_path)
-                            words = self._estimate_word_timings(transcript, 0.0, total_dur)
-                        return TranscriptionResult(
-                            text=transcript,
-                            words=words,
-                            language=language_code,
-                            provider=self.name,
-                        )
-                    elif status in ("failed", "error"):
-                        logger.error(f"Sarvam batch job failed: {poll_data}")
+                    state = poll_data.get("job_state", "")
+                    if state == "Completed":
+                        job_details = poll_data.get("job_details", [])
+                        logger.info(f"Sarvam batch job {job_id} completed successfully.")
+                        break
+                    elif state in ("Failed", "error"):
+                        logger.error(f"Sarvam batch job {job_id} failed: {poll_data}")
                         return None
-        except Exception as e:
-            logger.warning(f"Sarvam batch API encountered exception: {e}")
 
-        return None
+            if not job_details:
+                logger.warning(f"Sarvam batch job {job_id} timed out or produced no job_details.")
+                return None
+
+            # 6. Request download URL for output
+            outputs = job_details[0].get("outputs", []) if job_details else []
+            out_filename = outputs[0].get("file_name", "0.json") if outputs else "0.json"
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                dl_res = await client.post(
+                    "https://api.sarvam.ai/speech-to-text/job/v1/download-files",
+                    headers=headers,
+                    json={"job_id": job_id, "files": [out_filename]},
+                )
+
+            if dl_res.status_code != 200:
+                logger.warning(f"Sarvam download-files returned {dl_res.status_code}: {dl_res.text}")
+                return None
+
+            download_urls = dl_res.json().get("download_urls", {})
+            out_meta = download_urls.get(out_filename)
+            if not out_meta or "file_url" not in out_meta:
+                logger.warning("No download file_url in Sarvam response.")
+                return None
+
+            # 7. Fetch output JSON
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                out_content_res = await client.get(out_meta["file_url"])
+
+            result_json = out_content_res.json()
+            transcript = result_json.get("transcript", "").strip()
+            total_duration = get_media_duration(audio_path)
+
+            words, timestamps_estimated = self._parse_timestamps(
+                result_json.get("timestamps"),
+                result_json.get("words"),
+                transcript,
+                0.0,
+                total_duration,
+            )
+
+            segments = [
+                Segment(start=0.0, end=total_duration, text=transcript, words=words)
+            ]
+
+            return TranscriptionResult(
+                text=transcript,
+                words=words,
+                segments=segments,
+                language=language_code,
+                provider=self.name,
+                route_used="Sarvam (Batch API)",
+                timestamps_estimated=timestamps_estimated,
+            )
+
+        except Exception as e:
+            logger.warning(f"Sarvam batch API encountered exception: {e}", exc_info=True)
+            return None
 
     async def transcribe(
         self,
@@ -248,51 +417,74 @@ class SarvamProvider(BaseTranscriptionProvider):
         if not self.is_configured():
             raise ValueError("Sarvam API key is not configured in settings/environment.")
 
-        language_code = self._get_language_code(language)
-        mode = self._get_mode(language, style)
-        duration = get_media_duration(audio_path)
+        # Ensure audio is an audio format (not a raw mp4/mov video)
+        clean_audio = audio_path
+        temp_extracted = None
+        ext = os.path.splitext(audio_path)[1].lower()
+        if ext in [".mp4", ".mov", ".mkv", ".avi", ".webm", ".flv"]:
+            clean_audio = extract_audio(audio_path)
+            temp_extracted = clean_audio
 
-        logger.info(
-            f"Transcribing with Sarvam: file={audio_path}, duration={duration:.2f}s, "
-            f"lang={language_code}, mode={mode}"
-        )
+        try:
+            language_code = self._get_language_code(language)
+            mode = self._get_mode(language, style)
+            duration = get_media_duration(clean_audio)
 
-        # For files over 30s: Use Batch API if available, else chunking <= 28s
-        if duration > 30.0:
-            batch_result = await self._transcribe_batch_api(audio_path, language_code, mode)
-            if batch_result:
-                return batch_result
+            logger.info(
+                f"Transcribing with Sarvam: file={clean_audio}, duration={duration:.2f}s, "
+                f"lang={language_code}, mode={mode}"
+            )
 
-            logger.info("Proceeding with audio chunking for Sarvam synchronous transcription...")
-            chunks = chunk_audio(audio_path, chunk_duration_sec=28.0)
-            all_text_parts = []
-            all_words: List[WordTimestamp] = []
-            all_segments: List[Segment] = []
+            # For files over 30s: Use Batch API first, fall back to chunked REST <= 28s
+            if duration > 30.0:
+                logger.info("Attempting Sarvam Batch API route...")
+                batch_result = await self._transcribe_batch_api(clean_audio, language_code, mode)
+                if batch_result:
+                    return batch_result
 
-            for chunk_file, offset in chunks:
-                txt, words, segments = await self._transcribe_sync_chunk(
-                    chunk_file, offset, language_code, mode
+                logger.info("Sarvam Batch API unavailable or failed. Falling back to Sarvam Chunked REST route...")
+                chunks = chunk_audio(clean_audio, chunk_duration_sec=28.0)
+                all_text_parts = []
+                all_words: List[WordTimestamp] = []
+                all_segments: List[Segment] = []
+                any_estimated = False
+
+                for chunk_file, offset in chunks:
+                    txt, words, segments, est = await self._transcribe_sync_chunk(
+                        chunk_file, offset, language_code, mode
+                    )
+                    if txt:
+                        all_text_parts.append(txt)
+                    all_words.extend(words)
+                    all_segments.extend(segments)
+                    if est:
+                        any_estimated = True
+
+                return TranscriptionResult(
+                    text=" ".join(all_text_parts),
+                    words=all_words,
+                    segments=all_segments,
+                    language=language_code,
+                    provider=self.name,
+                    route_used="Sarvam (Chunked REST)",
+                    timestamps_estimated=any_estimated,
                 )
-                if txt:
-                    all_text_parts.append(txt)
-                all_words.extend(words)
-                all_segments.extend(segments)
-
-            return TranscriptionResult(
-                text=" ".join(all_text_parts),
-                words=all_words,
-                segments=all_segments,
-                language=language_code,
-                provider=self.name,
-            )
-        else:
-            txt, words, segments = await self._transcribe_sync_chunk(
-                audio_path, 0.0, language_code, mode
-            )
-            return TranscriptionResult(
-                text=txt,
-                words=words,
-                segments=segments,
-                language=language_code,
-                provider=self.name,
-            )
+            else:
+                txt, words, segments, est = await self._transcribe_sync_chunk(
+                    clean_audio, 0.0, language_code, mode
+                )
+                return TranscriptionResult(
+                    text=txt,
+                    words=words,
+                    segments=segments,
+                    language=language_code,
+                    provider=self.name,
+                    route_used="Sarvam (Synchronous REST)",
+                    timestamps_estimated=est,
+                )
+        finally:
+            if temp_extracted and os.path.exists(temp_extracted) and temp_extracted != audio_path:
+                try:
+                    os.remove(temp_extracted)
+                except Exception:
+                    pass

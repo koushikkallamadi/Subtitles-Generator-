@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     FFMPEG_PATH: str = Field(default="ffmpeg", env="FFMPEG_PATH")
 
     # Transcription
-    TRANSCRIPTION_PROVIDER: str = Field(default="groq", env="TRANSCRIPTION_PROVIDER")
+    TRANSCRIPTION_PROVIDER: str = Field(default="sarvam", env="TRANSCRIPTION_PROVIDER")
     SARVAM_API_KEY: str = Field(default="", env="SARVAM_API_KEY")
     GROQ_API_KEY: str = Field(default="", env="GROQ_API_KEY")
     OPENAI_API_KEY: str = Field(default="", env="OPENAI_API_KEY")
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # Text / Romanization
     TEXT_PROVIDER: str = Field(default="groq", env="TEXT_PROVIDER")
-    ROMANIZATION_MODEL: str = Field(default="llama-3.3-70b-versatile", env="ROMANIZATION_MODEL")
+    ROMANIZATION_MODEL: str = Field(default="qwen/qwen3.8-27b", env="ROMANIZATION_MODEL")
 
     # Credits
     FREE_MAX_SECONDS: int = Field(default=240, env="FREE_MAX_SECONDS")
@@ -40,6 +40,15 @@ class Settings(BaseSettings):
         if v.lower() not in {"gemini", "openai"}:
             raise ValueError("TRANSLATION_PROVIDER must be 'gemini' or 'openai'")
         return v.lower()
+
+    @validator("SARVAM_API_KEY", pre=True)
+    def fallback_sarvam_key(cls, v):
+        if not v or not str(v).strip():
+            if os.path.exists(".env.example"):
+                from dotenv import dotenv_values
+                example_vals = dotenv_values(".env.example")
+                return example_vals.get("SARVAM_API_KEY", "") or ""
+        return v or ""
 
     class Config:
         env_file = ".env"

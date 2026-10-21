@@ -84,13 +84,17 @@ class GroqProvider(BaseTranscriptionProvider):
         if lang_code:
             data["language"] = lang_code
 
+        ext = os.path.splitext(filename)[1].lower()
+        mime_type = "video/mp4" if ext == ".mp4" else "audio/mpeg" if ext == ".mp3" else "audio/wav" if ext == ".wav" else "audio/m4a"
+
         files = {
-            "file": (filename, file_bytes, "audio/mpeg"),
+            "file": (filename, file_bytes, mime_type),
         }
 
         logger.info(f"Transcribing with Groq Whisper: file={audio_path}, lang={lang_code}")
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
+        timeout = httpx.Timeout(120.0, connect=30.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(url, headers=headers, data=data, files=files)
 
         if response.status_code != 200:

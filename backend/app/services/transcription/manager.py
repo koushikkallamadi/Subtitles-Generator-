@@ -26,7 +26,7 @@ class TranscriptionManager:
     def get_fallback_order(self, primary_name: str) -> List[str]:
         """Order of providers to try if primary fails."""
         primary = primary_name.lower().strip()
-        all_names = ["groq", "sarvam", "local"]
+        all_names = ["sarvam", "groq", "local"]
         if primary in all_names:
             order = [primary] + [p for p in all_names if p != primary]
         else:
@@ -41,7 +41,7 @@ class TranscriptionManager:
         requested_provider: Optional[str] = None,
     ) -> TranscriptionResult:
         primary_name = (
-            requested_provider or settings.TRANSCRIPTION_PROVIDER or "groq"
+            requested_provider or settings.TRANSCRIPTION_PROVIDER or "sarvam"
         ).lower().strip()
 
         fallback_chain = self.get_fallback_order(primary_name)
@@ -78,6 +78,13 @@ class TranscriptionManager:
                     result.fallback_occurred = True
                     result.fallback_message = friendly_msg
                     logger.warning(f"Fallback active: {friendly_msg}")
+
+                # Apply Romanization step if style is Roman (skips Sarvam)
+                result = await apply_romanization_if_needed(
+                    result,
+                    style=style,
+                    language=language,
+                )
 
                 return result
 
