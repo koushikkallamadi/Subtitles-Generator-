@@ -13,8 +13,13 @@ interface VideoState {
   projectName: string;
   fileSize: number;
   duration: number;
+  language: string;
+  style: string;
   setVideoData: (url: string, name: string, size: number, dur: number) => void;
   setCues: (cues: Cue[]) => void;
+  setLanguage: (language: string) => void;
+  setStyle: (style: string) => void;
+  clearVideo: () => void;
 }
 
 export const useVideoStore = create<VideoState>()(
@@ -25,9 +30,34 @@ export const useVideoStore = create<VideoState>()(
       projectName: '',
       fileSize: 0,
       duration: 0,
+      language: 'Hindi',
+      style: 'roman',
       setVideoData: (url, name, size, dur) =>
-        set({ videoUrl: url, projectName: name, fileSize: size, duration: dur, cues: [] }),
+        set({
+          videoUrl: url,
+          projectName: name,
+          fileSize: size,
+          duration: dur,
+          cues: [],
+        }),
       setCues: (cues) => set({ cues }),
+      setLanguage: (language) =>
+        set((state) => {
+          // If changing to English, style should be 'roman' (or standard)
+          // For Indian languages, default to 'roman' if not already roman or native
+          return { language };
+        }),
+      setStyle: (style) => set({ style }),
+      clearVideo: () =>
+        set({
+          videoUrl: null,
+          cues: [],
+          projectName: '',
+          fileSize: 0,
+          duration: 0,
+          language: 'Hindi',
+          style: 'roman',
+        }),
     }),
     {
       name: 'video-store',

@@ -69,6 +69,7 @@ export default function EditorPage() {
                 onLoadedMetadata={() => {
                   if (videoRef.current?.duration) {
                     setDuration(videoRef.current.duration);
+                    useVideoStore.setState({ duration: videoRef.current.duration });
                   }
                 }}
                 onPlay={() => setIsPlaying(true)}
