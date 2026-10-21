@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef } from "react";
+import { useVideoStore } from "../store/videoStore";
 import {
   Scissors,
   Copy,
@@ -40,6 +41,7 @@ export default function Timeline({
   onSeek,
 }: TimelineProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const { cues } = useVideoStore();
 
   const safeDuration = duration > 0 ? duration : 6;
   const clipWidth = safeDuration * PIXELS_PER_SECOND;
@@ -170,7 +172,25 @@ export default function Timeline({
             </div>
 
             {/* Subtitles track row */}
-            <div className="relative h-12 border-b border-gray-800/60 bg-[#0b0f1a]/30" />
+            <div className="relative h-12 border-b border-gray-800/60 bg-[#0b0f1a]/30">
+              {cues &&
+                cues.map((cue, idx) => {
+                  const cueLeft = cue.start * PIXELS_PER_SECOND;
+                  const cueWidth = Math.max((cue.end - cue.start) * PIXELS_PER_SECOND, 20);
+                  return (
+                    <div
+                      key={idx}
+                      style={{ left: `${cueLeft}px`, width: `${cueWidth}px` }}
+                      className="group/cue absolute top-1.5 bottom-1.5 flex items-center rounded-md border border-orange-500/50 bg-gradient-to-r from-orange-950/70 to-amber-950/60 px-2 text-white shadow-sm overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer hover:border-orange-400"
+                      title={`${cue.start}s - ${cue.end}s: ${cue.text}`}
+                    >
+                      <span className="truncate text-[11px] font-medium leading-none text-orange-100">
+                        {cue.text}
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
 
             {/* Playhead */}
             <div

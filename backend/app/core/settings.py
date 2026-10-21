@@ -9,7 +9,8 @@ class Settings(BaseSettings):
     FFMPEG_PATH: str = Field(default="ffmpeg", env="FFMPEG_PATH")
 
     # Transcription
-    TRANSCRIPTION_PROVIDER: str = Field(default="local", env="TRANSCRIPTION_PROVIDER")
+    TRANSCRIPTION_PROVIDER: str = Field(default="groq", env="TRANSCRIPTION_PROVIDER")
+    SARVAM_API_KEY: str = Field(default="", env="SARVAM_API_KEY")
     GROQ_API_KEY: str = Field(default="", env="GROQ_API_KEY")
     OPENAI_API_KEY: str = Field(default="", env="OPENAI_API_KEY")
 
@@ -25,15 +26,16 @@ class Settings(BaseSettings):
 
     @validator("TRANSCRIPTION_PROVIDER")
     def validate_transcription_provider(cls, v):
-        if v not in {"groq", "openai", "local"}:
-            raise ValueError("TRANSCRIPTION_PROVIDER must be 'groq', 'openai' or 'local'")
-        return v
+        allowed = {"sarvam", "groq", "local", "openai"}
+        if v.lower() not in allowed:
+            raise ValueError(f"TRANSCRIPTION_PROVIDER must be one of {allowed}")
+        return v.lower()
 
     @validator("TRANSLATION_PROVIDER")
     def validate_translation_provider(cls, v):
-        if v not in {"gemini", "openai"}:
+        if v.lower() not in {"gemini", "openai"}:
             raise ValueError("TRANSLATION_PROVIDER must be 'gemini' or 'openai'")
-        return v
+        return v.lower()
 
     class Config:
         env_file = ".env"

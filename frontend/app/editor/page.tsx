@@ -10,12 +10,16 @@ import Timeline from "../../components/Timeline";
 
 export default function EditorPage() {
   const router = useRouter();
-  const { videoUrl, projectName, duration: storeDuration } = useVideoStore();
+  const { videoUrl, projectName, duration: storeDuration, cues } = useVideoStore();
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(storeDuration || 0);
+
+  const activeCue = cues?.find(
+    (c) => currentTime >= c.start && currentTime <= c.end
+  );
 
   useEffect(() => {
     if (!videoUrl) {
@@ -76,6 +80,15 @@ export default function EditorPage() {
                 onPause={() => setIsPlaying(false)}
                 className="h-full w-full object-contain"
               />
+
+              {/* Live Subtitle Overlay */}
+              {activeCue && (
+                <div className="pointer-events-none absolute bottom-6 left-6 right-6 flex justify-center text-center z-10">
+                  <span className="inline-block rounded-lg bg-black/80 px-4 py-2 text-base md:text-lg font-bold text-white shadow-2xl backdrop-blur-md border border-white/10 tracking-wide transition-all">
+                    {activeCue.text}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
