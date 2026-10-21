@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import logging
 import asyncio
 import tempfile
@@ -12,7 +13,7 @@ from app.services.transcription.base import (
     WordTimestamp,
     Segment,
 )
-from app.services.media import get_media_duration, chunk_audio, extract_audio
+from app.services.media import get_media_duration, chunk_audio, extract_audio, get_ffprobe_cmd
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,109 @@ class SarvamProvider(BaseTranscriptionProvider):
         ]
 
         return transcript, words, chunk_segments, timestamps_estimated
+
+    async def _chunk_by_silence(self, audio_path: str, min_chunk: float = 5.0, max_chunk: float = 10.0) -> List[Tuple[str, float]]:
+        """Split audio at silence points using ffmpeg silencedetect.
+        Returns a list of (chunk_file_path, start_offset). Ensures first chunk starts at 0.0.
+        """
+        ffprobe = get_ffprobe_cmd()
+        # Get total duration
+        total_duration = get_media_duration(audio_path)
+        if total_duration <= max_chunk:
+            return [(audio_path, 0.0)]
+        # Run ffmpeg silencedetect to get silence intervals
+        ffmpeg = get_ffmpeg_cmd()
+        silencedetect_cmd = [
+            ffmpeg, "-i", audio_path,
+            "-af", "silencedetect=noise=-30dB:d=0.3",
+            "-f", "null", "-"
+        ]
+        result = subprocess.run(silencedetect_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        silence_times = []
+        for line in result.stderr.splitlines():
+            if "silence_start" in line:
+                parts = line.strip().split('silence_start:')
+                try:
+                    start = float(parts[1].strip())
+                    silence_times.append((start, None))
+                except:
+                    pass
+            if "silence_end" in line:
+                parts = line.strip().split('silence_end:')
+                if len(parts) > 1:
+                    sub = parts[1].split('|')
+                    try:
+                        end = float(sub[0].strip())
+                        # attach to last tuple
+                        if silence_times and silence_times[-1][1] is None:
+                            silence_times[-1] = (silence_times[-1][0], end)
+                    except:
+                        pass
+        # Build chunk boundaries
+        boundaries = [0.0]
+        for start, end in silence_times:
+            if start is not None:
+                boundaries.append(start)
+            if end is not None:
+                boundaries.append(end)
+        boundaries.append(total_duration)
+        # Merge to respect min/max chunk length
+        chunks = []
+        cur_start = boundaries[0]
+        for i in range(1, len(boundaries)):
+            cur_end = boundaries[i]
+            if cur_end - cur_start >= min_chunk:
+                # ensure not exceed max_chunk, if so split evenly
+                segment_start = cur_start
+                while segment_start < cur_end:
+                    seg_end = min(segment_start + max_chunk, cur_end)
+                    chunks.append((segment_start, seg_end))
+                    segment_start = seg_end
+                cur_start = cur_end
+        # Generate files
+        result_chunks: List[Tuple[str, float]] = []
+        for idx, (s, e) in enumerate(chunks):
+            duration = e - s
+            chunk_file = os.path.join(
+                tempfile.gettempdir(),
+                f"chunk_{os.path.basename(audio_path)}_{idx}.mp3"
+            )
+            cmd = [
+                ffmpeg, "-y",
+                "-ss", str(s),
+                "-t", str(duration),
+                "-i", audio_path,
+                "-acodec", "copy",
+                chunk_file,
+            ]
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            result_chunks.append((chunk_file, s))
+        return result_chunks
+
+    def _postprocess_transcript(self, transcript: str, words: List[WordTimestamp]) -> Tuple[str, List[WordTimestamp]]:
+        """Clean transcript:
+        - Remove isolated solitary period tokens.
+        - Collapse duplicate letters in English words (e.g., installl -> install).
+        Adjust word list accordingly.
+        """
+        # Remove solitary '.' tokens
+        tokens = transcript.split()
+        cleaned_tokens = [t for t in tokens if t != '.']
+        # Collapse double letters for pure ASCII words
+        def collapse(word: str) -> str:
+            if word.isascii():
+                return re.sub(r'(.)\1{1,}', r'\1', word)
+            return word
+        cleaned_tokens = [collapse(t) for t in cleaned_tokens]
+        cleaned_transcript = " ".join(cleaned_tokens)
+        # Align words list (simple approach: filter corresponding words)
+        cleaned_words = []
+        for w in words:
+            txt = collapse(w.text)
+            if txt == '.':
+                continue
+            cleaned_words.append(WordTimestamp(text=txt, start=w.start, end=w.end))
+        return cleaned_transcript, cleaned_words
 
     async def _transcribe_batch_api(
         self,
@@ -443,7 +547,8 @@ class SarvamProvider(BaseTranscriptionProvider):
                     return batch_result
 
                 logger.info("Sarvam Batch API unavailable or failed. Falling back to Sarvam Chunked REST route...")
-                chunks = chunk_audio(clean_audio, chunk_duration_sec=28.0)
+                # Use silence‑based chunking (target 5‑10 s per chunk)
+                chunks = await self._chunk_by_silence(clean_audio, min_chunk=5.0, max_chunk=10.0)
                 all_text_parts = []
                 all_words: List[WordTimestamp] = []
                 all_segments: List[Segment] = []
@@ -453,13 +558,14 @@ class SarvamProvider(BaseTranscriptionProvider):
                     txt, words, segments, est = await self._transcribe_sync_chunk(
                         chunk_file, offset, language_code, mode
                     )
+                    # Clean up transcription text and words
+                    txt, words = self._postprocess_transcript(txt, words)
                     if txt:
                         all_text_parts.append(txt)
                     all_words.extend(words)
                     all_segments.extend(segments)
                     if est:
                         any_estimated = True
-
                 return TranscriptionResult(
                     text=" ".join(all_text_parts),
                     words=all_words,
@@ -473,6 +579,10 @@ class SarvamProvider(BaseTranscriptionProvider):
                 txt, words, segments, est = await self._transcribe_sync_chunk(
                     clean_audio, 0.0, language_code, mode
                 )
+                txt, words = self._postprocess_transcript(txt, words)
+                # Log overall first/last word if this is the sole chunk
+                if words:
+                    logger.info(f"Overall first word: '{words[0].text}' @ {words[0].start}s, last word: '{words[-1].text}' @ {words[-1].end}s")
                 return TranscriptionResult(
                     text=txt,
                     words=words,
