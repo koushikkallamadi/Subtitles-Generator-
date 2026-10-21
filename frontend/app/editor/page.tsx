@@ -7,6 +7,7 @@ import TopBar from "../../components/TopBar";
 import GeneratePanel from "../../components/GeneratePanel";
 import TransportBar from "../../components/TransportBar";
 import Timeline from "../../components/Timeline";
+import TranscriptTab from "../../components/TranscriptTab";
 
 export default function EditorPage() {
   const router = useRouter();
@@ -123,7 +124,17 @@ useEffect(() => {
         </main>
 
         {/* Right sidebar */}
-        <GeneratePanel onGenerate={() => console.log("Generate Subtitles clicked")} />
+        {cues && cues.length > 0 ? (
+          <div className="flex flex-col h-full w-80 bg-[#1a1e2b] p-4">
+            <div className="flex border-b border-gray-800 mb-2">
+              <button className="px-3 py-2 text-sm font-medium text-gray-300 hover:text-white">Transcript</button>
+              <button className="px-3 py-2 text-sm font-medium text-gray-300 hover:text-white">Style & export</button>
+            </div>
+            <TranscriptTab />
+          </div>
+        ) : (
+          <GeneratePanel onGenerate={() => console.log("Generate Subtitles clicked")} />
+        )}
       </div>
     </div>
   );

@@ -41,7 +41,7 @@ export default function Timeline({
   onSeek,
 }: TimelineProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const { cues, timingOffset } = useVideoStore();
+  const { cues, timingOffset, selectedCueIndex } = useVideoStore();
 
   const safeDuration = duration > 0 ? duration : 6;
   const clipWidth = safeDuration * PIXELS_PER_SECOND;
@@ -177,12 +177,18 @@ export default function Timeline({
                 cues.map((cue, idx) => {
                   const cueLeft = (cue.start + timingOffset) * PIXELS_PER_SECOND;
                   const cueWidth = Math.max((cue.end - cue.start) * PIXELS_PER_SECOND, 20);
+                  const isSelected = idx === selectedCueIndex;
                   return (
                     <div
                       key={idx}
                       style={{ left: `${cueLeft}px`, width: `${cueWidth}px` }}
-                      className="group/cue absolute top-1.5 bottom-1.5 flex items-center rounded-md border border-orange-500/50 bg-gradient-to-r from-orange-950/70 to-amber-950/60 px-2 text-white shadow-sm overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer hover:border-orange-400"
+                      className={`group/cue absolute top-1.5 bottom-1.5 flex items-center rounded-md border ${isSelected ? 'border-yellow-400' : 'border-orange-500/50'} bg-gradient-to-r from-orange-950/70 to-amber-950/60 px-2 text-white shadow-sm overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer hover:border-orange-400`}
                       title={`${cue.start}s - ${cue.end}s: ${cue.text}`}
+                      onClick={() => {
+                        useVideoStore.getState().setSelectedCue(idx);
+                        const video = document.querySelector('video');
+                        if (video) video.currentTime = cue.start;
+                      }}
                     >
                       <span className="truncate text-[11px] font-medium leading-none text-orange-100">
                         {cue.text}
