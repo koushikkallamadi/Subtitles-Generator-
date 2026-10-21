@@ -41,7 +41,7 @@ export default function Timeline({
   onSeek,
 }: TimelineProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const { cues } = useVideoStore();
+  const { cues, timingOffset } = useVideoStore();
 
   const safeDuration = duration > 0 ? duration : 6;
   const clipWidth = safeDuration * PIXELS_PER_SECOND;
@@ -175,7 +175,7 @@ export default function Timeline({
             <div className="relative h-12 border-b border-gray-800/60 bg-[#0b0f1a]/30">
               {cues &&
                 cues.map((cue, idx) => {
-                  const cueLeft = cue.start * PIXELS_PER_SECOND;
+                  const cueLeft = (cue.start + timingOffset) * PIXELS_PER_SECOND;
                   const cueWidth = Math.max((cue.end - cue.start) * PIXELS_PER_SECOND, 20);
                   return (
                     <div

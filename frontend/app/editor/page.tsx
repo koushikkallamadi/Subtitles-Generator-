@@ -10,7 +10,7 @@ import Timeline from "../../components/Timeline";
 
 export default function EditorPage() {
   const router = useRouter();
-  const { videoUrl, projectName, duration: storeDuration, cues } = useVideoStore();
+  const { videoUrl, projectName, duration: storeDuration, cues, timingOffset } = useVideoStore();
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -18,7 +18,7 @@ export default function EditorPage() {
   const [duration, setDuration] = useState(storeDuration || 0);
 
   const activeCue = cues?.find(
-    (c) => currentTime >= c.start && currentTime <= c.end
+    (c) => currentTime >= (c.start + timingOffset - 0.1) && currentTime <= (c.end + timingOffset)
   );
 
   useEffect(() => {
@@ -32,7 +32,21 @@ export default function EditorPage() {
       setDuration(storeDuration);
     }
   }, [storeDuration, duration]);
-
+useEffect(() => {
+  let rafId: number;
+  const update = () => {
+    if (videoRef.current) {
+      setCurrentTime(videoRef.current.currentTime);
+    }
+    rafId = requestAnimationFrame(update);
+  };
+  if (isPlaying) {
+    rafId = requestAnimationFrame(update);
+  }
+  return () => {
+    if (rafId) cancelAnimationFrame(rafId);
+  };
+}, [isPlaying]);
   const togglePlay = () => {
     if (!videoRef.current) return;
     if (isPlaying) {
@@ -65,11 +79,7 @@ export default function EditorPage() {
               <video
                 ref={videoRef}
                 src={videoUrl}
-                onTimeUpdate={() => {
-                  if (videoRef.current) {
-                    setCurrentTime(videoRef.current.currentTime);
-                  }
-                }}
+
                 onLoadedMetadata={() => {
                   if (videoRef.current?.duration) {
                     setDuration(videoRef.current.duration);

@@ -15,10 +15,12 @@ interface VideoState {
   duration: number;
   language: string;
   style: string;
+  timingOffset: number; // seconds, can be negative
   setVideoData: (url: string, name: string, size: number, dur: number) => void;
   setCues: (cues: Cue[]) => void;
   setLanguage: (language: string) => void;
   setStyle: (style: string) => void;
+  setTimingOffset: (offset: number) => void;
   clearVideo: () => void;
 }
 
@@ -32,6 +34,7 @@ export const useVideoStore = create<VideoState>()(
       duration: 0,
       language: 'Hindi',
       style: 'roman',
+      timingOffset: 0,
       setVideoData: (url, name, size, dur) =>
         set({
           videoUrl: url,
@@ -48,6 +51,7 @@ export const useVideoStore = create<VideoState>()(
           return { language };
         }),
       setStyle: (style) => set({ style }),
+      setTimingOffset: (offset) => set({ timingOffset: offset }),
       clearVideo: () =>
         set({
           videoUrl: null,
@@ -57,6 +61,7 @@ export const useVideoStore = create<VideoState>()(
           duration: 0,
           language: 'Hindi',
           style: 'roman',
+      timingOffset: 0,
         }),
     }),
     {
