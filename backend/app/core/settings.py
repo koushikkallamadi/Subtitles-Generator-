@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     TRANSLATION_PROVIDER: str = Field(default="gemini", env="TRANSLATION_PROVIDER")
     GEMINI_API_KEY: str = Field(default="", env="GEMINI_API_KEY")
 
+    # Text / Romanization
+    TEXT_PROVIDER: str = Field(default="groq", env="TEXT_PROVIDER")
+    ROMANIZATION_MODEL: str = Field(default="llama-3.3-70b-versatile", env="ROMANIZATION_MODEL")
+
     # Credits
     FREE_MAX_SECONDS: int = Field(default=240, env="FREE_MAX_SECONDS")
     FREE_INITIAL_CREDITS: float = Field(default=24.0, env="FREE_INITIAL_CREDITS")

@@ -8,6 +8,7 @@ from app.services.transcription.base import (
 from app.services.transcription.sarvam import SarvamProvider
 from app.services.transcription.groq import GroqProvider
 from app.services.transcription.local_whisper import LocalProvider
+from app.services.transcription.romanizer import apply_romanization_if_needed
 
 logger = logging.getLogger(__name__)
 
