@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Caveat:wght@400;700&family=Lora:ital,wght@0,400;0,700;1,400;1,700&family=Montserrat:wght@400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;700;800&family=Noto+Sans+Tamil:wght@400;500;700;800&family=Noto+Sans+Telugu:wght@400;500;700;800&family=Noto+Sans:wght@400;500;700;800&family=Poppins:wght@400;500;700;800&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -5,3 +6,10 @@
 html {
   scroll-behavior: smooth;
 }
+
+@keyframes captionZoom { from { opacity: 0; transform: scale(.78); } to { opacity: 1; transform: scale(1); } }
+@keyframes captionPop { 0% { opacity: 0; transform: scale(.6); } 75% { transform: scale(1.08); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes captionFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes captionSlide { from { opacity: 0; translate: 0 10px; } to { opacity: 1; translate: 0 0; } }
+@keyframes captionType { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+.caption-word { animation: captionFade .12s ease-out both; }

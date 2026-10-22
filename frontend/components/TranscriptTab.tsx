@@ -3,6 +3,7 @@ import { Captions, ChevronDown, ChevronUp, Languages, List, RotateCcw } from 'lu
 import SettingsPanel from './SettingsPanel';
 import CueCard from './CueCard';
 import { useVideoStore } from '../store/videoStore';
+import StyleExportTab from './style/StyleExportTab';
 
 const languages = ['English', 'Hindi', 'Telugu', 'Tamil', 'Marathi', 'Urdu', 'Kannada', 'Bengali', 'Malayalam', 'Gujarati'];
 const headerClass = 'flex w-full items-center justify-between border-b border-[#dc735c]/25 bg-[#322421] px-3 py-3 text-left text-sm font-semibold text-[#dc735c]';
@@ -41,17 +42,6 @@ export default function TranscriptTab({ onRegenerate }: { onRegenerate?: () => v
     if (store.cues.some((cue) => cue.manuallyEdited) && !window.confirm('Re-segmenting replaces your manual cue edits. Continue?')) return;
     store.resegmentCues(maxWords, lines);
   };
-  const exportSubtitles = (format: 'srt' | 'vtt') => {
-    const timestamp = (value: number) => {
-      const totalMs = Math.max(0, Math.round((value + store.timingOffset) * 1000));
-      const hours = Math.floor(totalMs / 3600000), minutes = Math.floor((totalMs % 3600000) / 60000), seconds = Math.floor((totalMs % 60000) / 1000), millis = totalMs % 1000;
-      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}${formatSeparator(format, millis)}`;
-    };
-    const body = cues.map((cue, index) => `${format === 'srt' ? index + 1 : ''}\n${timestamp(cue.start)} --> ${timestamp(cue.end)}\n${cue.text}`).join('\n\n');
-    const blob = new Blob([format === 'vtt' ? `WEBVTT\n\n${body}` : body], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob), anchor = document.createElement('a');
-    anchor.href = url; anchor.download = `captions.${format}`; anchor.click(); URL.revokeObjectURL(url);
-  };
   return <div className="flex min-h-0 flex-1 flex-col overflow-hidden text-white">
     <div className="sticky top-0 z-20 grid shrink-0 grid-cols-2 border-b border-gray-700/80 bg-[#1a1e2b]">
       <button onClick={() => setActiveTab('transcript')} className={`flex items-center justify-center gap-2 border-b-2 px-2 py-3 text-sm font-semibold ${activeTab === 'transcript' ? 'border-[#dc735c] text-[#dc735c]' : 'border-transparent text-gray-400 hover:text-white'}`}><List size={16} />Transcript</button>
@@ -62,10 +52,7 @@ export default function TranscriptTab({ onRegenerate }: { onRegenerate?: () => v
       <button onClick={onRegenerate} className="rounded-lg border border-gray-700 px-2.5 py-1.5 text-xs text-gray-300 hover:border-gray-500 hover:text-white">Regenerate</button>
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto">
-      {activeTab === 'style' ? <section className="space-y-4 p-4">
-        <div><h2 className="mb-2 text-sm font-semibold text-gray-200">Subtitle script</h2><select value={store.style} onChange={(event) => store.setStyle(event.target.value)} className="w-full rounded-lg border border-gray-700 bg-[#22252b] px-3 py-2 text-sm text-white"><option value="roman">Roman letters</option><option value="native">Native script</option></select></div>
-        <div><h2 className="mb-2 text-sm font-semibold text-gray-200">Export subtitles</h2><div className="flex gap-2"><button onClick={() => exportSubtitles('srt')} className="flex-1 rounded-lg border border-gray-700 bg-[#22252b] px-3 py-2 text-sm hover:bg-[#2b2e35]">Download SRT</button><button onClick={() => exportSubtitles('vtt')} className="flex-1 rounded-lg border border-gray-700 bg-[#22252b] px-3 py-2 text-sm hover:bg-[#2b2e35]">Download VTT</button></div></div>
-      </section> : <>
+      {activeTab === 'style' ? <StyleExportTab /> : <>
       <section>
         <button onClick={() => setShowSettings(!showSettings)} className={headerClass}><span>Transcript settings</span>{showSettings ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
         {showSettings && <SettingsPanel onResegment={resegment} />}
@@ -81,8 +68,4 @@ export default function TranscriptTab({ onRegenerate }: { onRegenerate?: () => v
     </div>
     {toast && <div role="status" className="fixed bottom-5 right-5 z-50 rounded-xl border border-gray-600 bg-[#25282f] px-4 py-3 text-sm shadow-xl">{toast}</div>}
   </div>;
-}
-
-function formatSeparator(format: 'srt' | 'vtt', millis: number) {
-  return `${format === 'srt' ? ',' : '.'}${String(millis).padStart(3, '0')}`;
 }

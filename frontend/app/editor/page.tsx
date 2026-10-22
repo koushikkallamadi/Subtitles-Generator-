@@ -2,12 +2,13 @@
 
 import { ChangeEvent, Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useVideoStore } from "../../store/videoStore";
+import { DEFAULT_CAPTION_STYLE, useVideoStore } from "../../store/videoStore";
 import TopBar from "../../components/TopBar";
 import GeneratePanel from "../../components/GeneratePanel";
 import TransportBar from "../../components/TransportBar";
 import Timeline from "../../components/Timeline";
 import TranscriptTab from "../../components/TranscriptTab";
+import CaptionOverlay from "../../components/style/CaptionOverlay";
 import { backendUrl, fetchProject, fetchProjectCues, patchProject, saveProjectCues, uploadProject } from "../../lib/projects";
 
 export default function EditorPage() {
@@ -47,6 +48,7 @@ function EditorContent() {
         projectId: project.id, videoUrl: project.media_available ? `${backendUrl}/media/${project.id}` : null,
         projectName: project.title || project.file_name, fileSize: project.size, duration: project.duration,
         language: project.language, style: project.style, cues: mappedCues, originalCues: mappedCues.map((cue) => ({ ...cue, words: cue.words?.map((word) => ({ ...word })) })),
+        captionStyle: { ...DEFAULT_CAPTION_STYLE, ...(settings.captionStyle && typeof settings.captionStyle === 'object' ? settings.captionStyle : {}) },
         timingOffset: Number(settings.timingOffset ?? 0), maxWordsPerLine: Number(settings.maxWordsPerLine ?? 4), maxLinesPerSubtitle: Number(settings.maxLinesPerSubtitle ?? 2), savingState: "saved",
       });
       setDuration(project.duration || 0);
@@ -61,17 +63,19 @@ function EditorContent() {
   useEffect(() => {
     if (projectLoading || !store.projectId) return;
     const revision = ++saveRevision.current;
-    store.setSavingState("saving");
+    if (store.savingState !== "unsaved") store.setSavingState("saving");
     const timer = window.setTimeout(() => {
-      const settings_json = { timingOffset: store.timingOffset, maxWordsPerLine: store.maxWordsPerLine, maxLinesPerSubtitle: store.maxLinesPerSubtitle };
+      const latest = useVideoStore.getState();
+      latest.setSavingState("saving");
+      const settings_json = { timingOffset: latest.timingOffset, maxWordsPerLine: latest.maxWordsPerLine, maxLinesPerSubtitle: latest.maxLinesPerSubtitle, captionStyle: latest.captionStyle };
       void Promise.all([
-        saveProjectCues(store.projectId!, store.cues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked, words: cue.words || [] }))),
-        patchProject(store.projectId!, { language: store.language, style: store.style, duration: store.duration, settings_json }),
+        saveProjectCues(latest.projectId!, latest.cues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked, words: cue.words || [] }))),
+        patchProject(latest.projectId!, { language: latest.language, style: latest.style, duration: latest.duration, settings_json }),
       ]).then(() => { if (saveRevision.current === revision) useVideoStore.getState().setSavingState("saved"); })
         .catch(() => { if (saveRevision.current === revision) useVideoStore.getState().setSavingState("error"); });
     }, 800);
     return () => window.clearTimeout(timer);
-  }, [projectLoading, mediaMissing, store.projectId, store.cues, store.timingOffset, store.maxWordsPerLine, store.maxLinesPerSubtitle, store.language, store.style, store.duration]);
+  }, [projectLoading, mediaMissing, store.projectId, store.cues, store.timingOffset, store.maxWordsPerLine, store.maxLinesPerSubtitle, store.language, store.style, store.duration, store.captionStyle]);
 
   const activeCue = cues?.find(
     (c) => currentTime >= (c.start + timingOffset - 0.1) && currentTime <= (c.end + timingOffset)
@@ -126,7 +130,7 @@ useEffect(() => {
       const project = await uploadProject(file, store.language, store.style);
       useVideoStore.setState({ projectId: project.id, videoUrl: `${backendUrl}/media/${project.id}`, projectName: project.title, fileSize: project.size, duration: project.duration, savingState: "saved" });
       await saveProjectCues(project.id, store.cues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked, words: cue.words || [] })));
-      await patchProject(project.id, { settings_json: { timingOffset: store.timingOffset, maxWordsPerLine: store.maxWordsPerLine, maxLinesPerSubtitle: store.maxLinesPerSubtitle } });
+      await patchProject(project.id, { settings_json: { timingOffset: store.timingOffset, maxWordsPerLine: store.maxWordsPerLine, maxLinesPerSubtitle: store.maxLinesPerSubtitle, captionStyle: store.captionStyle } });
       router.replace(`/editor?project=${encodeURIComponent(project.id)}`);
       setMediaMissing(false);
     } catch (error) { setLoadError(error instanceof Error ? error.message : "Could not upload the replacement video."); }
@@ -166,14 +170,7 @@ useEffect(() => {
                 className="h-full w-full object-contain"
               />
 
-              {/* Live Subtitle Overlay */}
-              {activeCue && (
-                <div className="pointer-events-none absolute bottom-6 left-6 right-6 flex justify-center text-center z-10">
-                  <span className="inline-block rounded-lg bg-black/80 px-4 py-2 text-base md:text-lg font-bold text-white shadow-2xl backdrop-blur-md border border-white/10 tracking-wide transition-all">
-                    {activeCue.text}
-                  </span>
-                </div>
-              )}
+              <CaptionOverlay cue={activeCue} currentTime={currentTime} videoRef={videoRef} />
             </div>
           </div>
 

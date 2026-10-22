@@ -6,7 +6,7 @@ export type ProjectRecord = {
   duration: number;
   language: string;
   style: string;
-  settings_json: Record<string, number>;
+  settings_json: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   media_available: boolean;

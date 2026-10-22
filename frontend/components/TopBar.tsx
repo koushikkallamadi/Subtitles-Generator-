@@ -7,7 +7,7 @@ import HistoryDrawer from "./HistoryDrawer";
 
 interface TopBarProps {
   projectName?: string;
-  savingState?: 'saved' | 'saving' | 'error';
+  savingState?: 'saved' | 'unsaved' | 'saving' | 'error';
 }
 
 export default function TopBar({ projectName, savingState = 'saved' }: TopBarProps) {
@@ -26,7 +26,7 @@ export default function TopBar({ projectName, savingState = 'saved' }: TopBarPro
             {projectName || "Untitled project"}
           </span>
           <span className="text-[11px] text-gray-500 font-normal leading-tight mt-0.5">
-            {savingState === 'saving' ? 'Saving…' : savingState === 'error' ? 'Could not save changes' : 'All changes saved'}
+            {savingState === 'unsaved' ? 'Unsaved caption changes' : savingState === 'saving' ? 'Saving…' : savingState === 'error' ? 'Could not save changes' : 'All changes saved'}
           </span>
         </div>
       </div>
