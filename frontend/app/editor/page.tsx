@@ -3,6 +3,8 @@
 import { ChangeEvent, Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DEFAULT_CAPTION_STYLE, useVideoStore } from "../../store/videoStore";
+import { validateCaptionStyle } from "../../lib/captionStyle";
+import { detectCaptionPreset } from "../../lib/captionPresets";
 import TopBar from "../../components/TopBar";
 import GeneratePanel from "../../components/GeneratePanel";
 import TransportBar from "../../components/TransportBar";
@@ -48,7 +50,8 @@ function EditorContent() {
         projectId: project.id, videoUrl: project.media_available ? `${backendUrl}/media/${project.id}` : null,
         projectName: project.title || project.file_name, fileSize: project.size, duration: project.duration,
         language: project.language, style: project.style, cues: mappedCues, originalCues: mappedCues.map((cue) => ({ ...cue, words: cue.words?.map((word) => ({ ...word })) })),
-        captionStyle: { ...DEFAULT_CAPTION_STYLE, ...(settings.captionStyle && typeof settings.captionStyle === 'object' ? settings.captionStyle : {}) },
+        captionStyle: validateCaptionStyle(settings.captionStyle || DEFAULT_CAPTION_STYLE),
+        selectedCaptionPreset: detectCaptionPreset(validateCaptionStyle(settings.captionStyle || DEFAULT_CAPTION_STYLE)),
         timingOffset: Number(settings.timingOffset ?? 0), maxWordsPerLine: Number(settings.maxWordsPerLine ?? 4), maxLinesPerSubtitle: Number(settings.maxLinesPerSubtitle ?? 2), savingState: "saved",
       });
       setDuration(project.duration || 0);
