@@ -89,6 +89,8 @@ useEffect(() => {
                 }}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
+                onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+                onSeeked={(event) => setCurrentTime(event.currentTarget.currentTime)}
                 className="h-full w-full object-contain"
               />
 
@@ -125,11 +127,7 @@ useEffect(() => {
 
         {/* Right sidebar */}
         {cues && cues.length > 0 ? (
-          <div className="flex flex-col h-full w-80 bg-[#1a1e2b] p-4">
-            <div className="flex border-b border-gray-800 mb-2">
-              <button className="px-3 py-2 text-sm font-medium text-gray-300 hover:text-white">Transcript</button>
-              <button className="px-3 py-2 text-sm font-medium text-gray-300 hover:text-white">Style & export</button>
-            </div>
+          <div className="flex min-w-0 flex-col h-full w-[26rem] bg-[#1a1e2b] p-3">
             <TranscriptTab />
           </div>
         ) : (

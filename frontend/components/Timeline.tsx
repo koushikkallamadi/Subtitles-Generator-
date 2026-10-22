@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { useVideoStore } from "../store/videoStore";
 import {
   Scissors,
@@ -42,6 +42,17 @@ export default function Timeline({
 }: TimelineProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { cues, timingOffset, selectedCueIndex } = useVideoStore();
+
+  useEffect(() => {
+    if (selectedCueIndex === null) return;
+    const container = scrollContainerRef.current;
+    const block = container?.querySelector<HTMLElement>(`[data-cue-index="${selectedCueIndex}"]`);
+    if (!container || !block) return;
+    const blockLeft = block.offsetLeft;
+    const blockRight = blockLeft + block.offsetWidth;
+    if (blockLeft < container.scrollLeft) container.scrollLeft = blockLeft - 24;
+    else if (blockRight > container.scrollLeft + container.clientWidth) container.scrollLeft = blockRight - container.clientWidth + 24;
+  }, [selectedCueIndex, cues.length]);
 
   const safeDuration = duration > 0 ? duration : 6;
   const clipWidth = safeDuration * PIXELS_PER_SECOND;
@@ -181,13 +192,15 @@ export default function Timeline({
                   return (
                     <div
                       key={idx}
+                      data-cue-index={idx}
                       style={{ left: `${cueLeft}px`, width: `${cueWidth}px` }}
                       className={`group/cue absolute top-1.5 bottom-1.5 flex items-center rounded-md border ${isSelected ? 'border-yellow-400' : 'border-orange-500/50'} bg-gradient-to-r from-orange-950/70 to-amber-950/60 px-2 text-white shadow-sm overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer hover:border-orange-400`}
                       title={`${cue.start}s - ${cue.end}s: ${cue.text}`}
-                      onClick={() => {
+                      onClick={(event) => {
+                        // Prevent the track background handler from seeking to the click point.
+                        event.stopPropagation();
                         useVideoStore.getState().setSelectedCue(idx);
-                        const video = document.querySelector('video');
-                        if (video) video.currentTime = cue.start;
+                        onSeek(Math.max(0, cue.start + timingOffset));
                       }}
                     >
                       <span className="truncate text-[11px] font-medium leading-none text-orange-100">

@@ -7,6 +7,8 @@ frontend/.next/
 frontend/tsconfig.tsbuildinfo
 
 # Python / Backend
+backend/captionkit.db
+backend/storage/
 __pycache__/
 backend/__pycache__/
 backend/**/__pycache__/
