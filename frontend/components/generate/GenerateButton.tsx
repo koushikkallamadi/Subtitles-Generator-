@@ -3,9 +3,10 @@
 import React, { useState } from "react";
 import { Sparkles, Loader2, AlertCircle, CheckCircle, Info } from "lucide-react";
 import { useVideoStore } from "../../store/videoStore";
+import { backendUrl } from "../../lib/projects";
 
 export default function GenerateButton() {
-  const { videoUrl, projectName, language, style, duration, setCues } = useVideoStore();
+  const { videoUrl, projectName, language, style, duration, projectId, setCues } = useVideoStore();
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [toast, setToast] = useState<{ message: string; type: "info" | "warning" | "error" | "success" } | null>(null);
@@ -26,21 +27,20 @@ export default function GenerateButton() {
     setProgress(10);
     setToast(null);
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
-
     try {
       if (!videoUrl) {
         throw new Error("No video loaded. Please select a video first.");
       }
 
-      // Convert videoUrl blob into a File / Blob for upload
-      setProgress(20);
-      const res = await fetch(videoUrl);
-      const blob = await res.blob();
-      const fileName = projectName || "video.mp4";
-
       const formData = new FormData();
-      formData.append("file", blob, fileName);
+      if (projectId) {
+        formData.append("project_id", projectId);
+      } else {
+        setProgress(20);
+        const mediaResponse = await fetch(videoUrl);
+        const blob = await mediaResponse.blob();
+        formData.append("file", blob, projectName || "video.mp4");
+      }
       formData.append("language", language);
       formData.append("style", style);
 

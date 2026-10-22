@@ -2,12 +2,33 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useVideoStore } from '../store/videoStore';
+import { backendUrl, uploadProject } from '../lib/projects';
 
 export default function HomePage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadError, setUploadError] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const acceptFile = async (file: File) => {
+    if (file.size > 500 * 1024 * 1024 || (!file.type.startsWith('video/') && !file.type.startsWith('audio/'))) {
+      setUploadError(file.size > 500 * 1024 * 1024 ? 'File size exceeds 500 MB limit.' : 'Unsupported file type.');
+      return;
+    }
+    setUploadError(''); setUploading(true);
+    try {
+      const { language, style } = useVideoStore.getState();
+      const project = await uploadProject(file, language, style);
+      const store = useVideoStore.getState();
+      store.setVideoData(`${backendUrl}/media/${project.id}`, project.title, project.size, project.duration);
+      store.setProjectId(project.id);
+      store.setLanguage(project.language); store.setStyle(project.style);
+      router.push(`/editor?project=${encodeURIComponent(project.id)}`);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Upload failed. Please try again.');
+    } finally { setUploading(false); }
+  };
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center p-4">
@@ -37,8 +58,8 @@ export default function HomePage() {
             Upload your short video and let AI generate subtitles in multiple Indian languages.
           </p>
           <div className="flex space-x-4 mb-4">
-<button onClick={() => fileInputRef.current?.click()} className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/80 transition">
-  Add your video
+<button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/80 transition disabled:opacity-60">
+  {uploading ? 'Uploading…' : 'Add your video'}
 </button>
 <input
   type="file"
@@ -47,18 +68,7 @@ export default function HomePage() {
   style={{ display: 'none' }}
   onChange={(e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 500 * 1024 * 1024) {
-      alert('File size exceeds 500 MB limit');
-      return;
-    }
-    if (!file.type.startsWith('video/') && !file.type.startsWith('audio/')) {
-      alert('Unsupported file type');
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    useVideoStore.getState().setVideoData(url, file.name, file.size, 0);
-    router.push('/editor');
+    if (file) void acceptFile(file);
   }}
 />
 <Link href="/upload" className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition">Try a Sample</Link>
@@ -76,19 +86,10 @@ export default function HomePage() {
           e.preventDefault();
           const file = e.dataTransfer.files?.[0];
           if (!file) return;
-          if (file.size > 500 * 1024 * 1024) {
-            alert('File size exceeds 500 MB limit');
-            return;
-          }
-          if (!file.type.startsWith('video/') && !file.type.startsWith('audio/')) {
-            alert('Unsupported file type');
-            return;
-          }
-          const url = URL.createObjectURL(file);
-          useVideoStore.getState().setVideoData(url, file.name, file.size, 0);
-          router.push('/editor');
+          void acceptFile(file);
         }}
       />
+      {uploadError && <p role="alert" className="mt-3 text-sm text-red-300">{uploadError}</p>}
     </div>
   );
 }

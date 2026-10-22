@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     # Core
     SECRET_KEY: str = Field(default="dev-secret-key", env="SECRET_KEY")
     DATABASE_URL: str = Field(default="sqlite:///./captionkit.db", env="DATABASE_URL")
+    MEDIA_RETENTION_DAYS: int = Field(default=7, env="MEDIA_RETENTION_DAYS")
     FFMPEG_PATH: str = Field(default="ffmpeg", env="FFMPEG_PATH")
 
     # Transcription

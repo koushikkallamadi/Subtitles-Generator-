@@ -1,32 +1,87 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { ChangeEvent, Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useVideoStore } from "../../store/videoStore";
 import TopBar from "../../components/TopBar";
 import GeneratePanel from "../../components/GeneratePanel";
 import TransportBar from "../../components/TransportBar";
 import Timeline from "../../components/Timeline";
 import TranscriptTab from "../../components/TranscriptTab";
+import { backendUrl, fetchProject, fetchProjectCues, patchProject, saveProjectCues, uploadProject } from "../../lib/projects";
 
 export default function EditorPage() {
+  return <Suspense fallback={<div className="grid h-screen place-items-center bg-[#0b0f1a] text-sm text-gray-300">Loading project…</div>}><EditorContent /></Suspense>;
+}
+
+function EditorContent() {
   const router = useRouter();
-  const { videoUrl, projectName, duration: storeDuration, cues, timingOffset } = useVideoStore();
+  const queryProjectId = useSearchParams().get("project");
+  const store = useVideoStore();
+  const { videoUrl, projectName, duration: storeDuration, cues, timingOffset } = store;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(storeDuration || 0);
+  const [projectLoading, setProjectLoading] = useState(true);
+  const [mediaMissing, setMediaMissing] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [reuploading, setReuploading] = useState(false);
+  const saveRevision = useRef(0);
+
+  useEffect(() => {
+    const projectId = queryProjectId || useVideoStore.getState().projectId;
+    if (!projectId) {
+      setProjectLoading(false);
+      if (!useVideoStore.getState().videoUrl) router.push("/");
+      return;
+    }
+    if (projectId !== useVideoStore.getState().projectId) setProjectLoading(true);
+    let cancelled = false;
+    void Promise.all([fetchProject(projectId), fetchProjectCues(projectId)]).then(([project, apiCues]) => {
+      if (cancelled) return;
+      const mappedCues = apiCues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked ?? true, words: cue.words || cue.words_json || [], manuallyEdited: false }));
+      const settings = project.settings_json || {};
+      useVideoStore.setState({
+        projectId: project.id, videoUrl: project.media_available ? `${backendUrl}/media/${project.id}` : null,
+        projectName: project.title || project.file_name, fileSize: project.size, duration: project.duration,
+        language: project.language, style: project.style, cues: mappedCues, originalCues: mappedCues.map((cue) => ({ ...cue, words: cue.words?.map((word) => ({ ...word })) })),
+        timingOffset: Number(settings.timingOffset ?? 0), maxWordsPerLine: Number(settings.maxWordsPerLine ?? 4), maxLinesPerSubtitle: Number(settings.maxLinesPerSubtitle ?? 2), savingState: "saved",
+      });
+      setDuration(project.duration || 0);
+      setMediaMissing(!project.media_available);
+      setProjectLoading(false);
+    }).catch((error) => {
+      if (!cancelled) { setLoadError(error instanceof Error ? error.message : "Could not load project."); setProjectLoading(false); }
+    });
+    return () => { cancelled = true; };
+  }, [router, queryProjectId]);
+
+  useEffect(() => {
+    if (projectLoading || !store.projectId) return;
+    const revision = ++saveRevision.current;
+    store.setSavingState("saving");
+    const timer = window.setTimeout(() => {
+      const settings_json = { timingOffset: store.timingOffset, maxWordsPerLine: store.maxWordsPerLine, maxLinesPerSubtitle: store.maxLinesPerSubtitle };
+      void Promise.all([
+        saveProjectCues(store.projectId!, store.cues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked, words: cue.words || [] }))),
+        patchProject(store.projectId!, { language: store.language, style: store.style, duration: store.duration, settings_json }),
+      ]).then(() => { if (saveRevision.current === revision) useVideoStore.getState().setSavingState("saved"); })
+        .catch(() => { if (saveRevision.current === revision) useVideoStore.getState().setSavingState("error"); });
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [projectLoading, mediaMissing, store.projectId, store.cues, store.timingOffset, store.maxWordsPerLine, store.maxLinesPerSubtitle, store.language, store.style, store.duration]);
 
   const activeCue = cues?.find(
     (c) => currentTime >= (c.start + timingOffset - 0.1) && currentTime <= (c.end + timingOffset)
   );
 
   useEffect(() => {
-    if (!videoUrl) {
+    if (!projectLoading && !videoUrl && !mediaMissing && !loadError) {
       router.push("/");
     }
-  }, [videoUrl, router]);
+  }, [videoUrl, mediaMissing, loadError, projectLoading, router]);
 
   useEffect(() => {
     if (storeDuration && !duration) {
@@ -64,13 +119,30 @@ useEffect(() => {
     setCurrentTime(time);
   };
 
+  const recoverMissingMedia = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]; if (!file) return;
+    setReuploading(true); setLoadError("");
+    try {
+      const project = await uploadProject(file, store.language, store.style);
+      useVideoStore.setState({ projectId: project.id, videoUrl: `${backendUrl}/media/${project.id}`, projectName: project.title, fileSize: project.size, duration: project.duration, savingState: "saved" });
+      await saveProjectCues(project.id, store.cues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked, words: cue.words || [] })));
+      await patchProject(project.id, { settings_json: { timingOffset: store.timingOffset, maxWordsPerLine: store.maxWordsPerLine, maxLinesPerSubtitle: store.maxLinesPerSubtitle } });
+      router.replace(`/editor?project=${encodeURIComponent(project.id)}`);
+      setMediaMissing(false);
+    } catch (error) { setLoadError(error instanceof Error ? error.message : "Could not upload the replacement video."); }
+    finally { setReuploading(false); }
+  };
+
+  if (projectLoading) return <div className="grid h-screen place-items-center bg-[#0b0f1a] text-sm text-gray-300">Loading project…</div>;
+  if (mediaMissing) return <div className="flex h-screen flex-col bg-[#0b0f1a] text-white"><TopBar projectName={projectName} savingState={store.savingState} /><main className="m-auto w-full max-w-lg rounded-2xl border border-gray-800 bg-[#151a26] p-8 text-center"><h1 className="text-lg font-semibold">This video is no longer stored</h1><p className="mt-2 text-sm text-gray-400">Your project and subtitles are still available. Pick the video again to restore playback.</p><label className="mt-5 inline-flex cursor-pointer rounded-lg bg-[#d96b52] px-4 py-2 text-sm font-medium text-white">{reuploading ? "Uploading…" : "Pick your video again"}<input type="file" accept="video/*,audio/*" className="hidden" disabled={reuploading} onChange={(event) => void recoverMissingMedia(event)} /></label>{loadError && <p role="alert" className="mt-3 text-sm text-red-300">{loadError}</p>}</main></div>;
+  if (loadError && !videoUrl) return <div className="grid h-screen place-items-center bg-[#0b0f1a] text-sm text-red-300">{loadError}</div>;
   if (!videoUrl) {
     return null;
   }
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#0b0f1a] text-white">
-      <TopBar projectName={projectName} />
+      <TopBar projectName={projectName} savingState={store.savingState} />
       <div className="flex flex-1 overflow-hidden">
         {/* Left column: Video preview, TransportBar, Timeline */}
         <main className="flex flex-1 flex-col h-full overflow-hidden">

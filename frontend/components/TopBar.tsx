@@ -2,12 +2,16 @@
 
 import Link from "next/link";
 import { History, Gem } from "lucide-react";
+import { useState } from "react";
+import HistoryDrawer from "./HistoryDrawer";
 
 interface TopBarProps {
   projectName?: string;
+  savingState?: 'saved' | 'saving' | 'error';
 }
 
-export default function TopBar({ projectName }: TopBarProps) {
+export default function TopBar({ projectName, savingState = 'saved' }: TopBarProps) {
+  const [historyOpen, setHistoryOpen] = useState(false);
   return (
     <header className="flex h-14 items-center justify-between border-b border-gray-800 bg-[#0f1422] px-6 select-none">
       {/* Left side: Logo & Project Name */}
@@ -22,7 +26,7 @@ export default function TopBar({ projectName }: TopBarProps) {
             {projectName || "Untitled project"}
           </span>
           <span className="text-[11px] text-gray-500 font-normal leading-tight mt-0.5">
-            All changes saved
+            {savingState === 'saving' ? 'Saving…' : savingState === 'error' ? 'Could not save changes' : 'All changes saved'}
           </span>
         </div>
       </div>
@@ -38,6 +42,7 @@ export default function TopBar({ projectName }: TopBarProps) {
 
         <button
           type="button"
+          onClick={() => setHistoryOpen(true)}
           className="flex items-center gap-1.5 rounded-full bg-[#171d2b] border border-gray-800/80 px-3 py-1.5 text-xs font-medium text-gray-200 transition hover:bg-gray-800 hover:text-white"
         >
           <History className="h-3.5 w-3.5 text-gray-400" />
@@ -59,6 +64,7 @@ export default function TopBar({ projectName }: TopBarProps) {
           </svg>
         </div>
       </div>
+      {historyOpen && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
     </header>
   );
 }

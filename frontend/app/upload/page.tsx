@@ -2,6 +2,7 @@
 import React, { useRef, useEffect } from 'react';
 import { useVideoStore } from '../../store/videoStore';
 import { useRouter } from 'next/navigation';
+import { backendUrl, saveProjectCues, uploadProject } from '../../lib/projects';
 
 // Sample cues (pre‑made, 2‑3 seconds each)
 const SAMPLE_CUES = [
@@ -12,41 +13,39 @@ const SAMPLE_CUES = [
 
 export default function UploadPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { videoUrl, setVideoData, setCues } = useVideoStore();
+  const { videoUrl, setVideoData, setCues, setProjectId, language, style } = useVideoStore();
   const router = useRouter();
+  const openUploadedProject = async (file: File) => {
+    const project = await uploadProject(file, language, style);
+    setVideoData(`${backendUrl}/media/${project.id}`, project.title, project.size, project.duration);
+    setProjectId(project.id); setCues(SAMPLE_CUES);
+    await saveProjectCues(project.id, SAMPLE_CUES);
+    router.push(`/editor?project=${encodeURIComponent(project.id)}`);
+  };
 
   // Load sample video and cues
   const loadSample = () => {
     const sampleUrl = '/sample.mp4';
-    const tempVideo = document.createElement('video');
-    tempVideo.src = sampleUrl;
-    tempVideo.onloadedmetadata = () => {
-      setVideoData(sampleUrl, 'sample.mp4', 0, tempVideo.duration || 0);
-      setCues(SAMPLE_CUES);
-      router.push('/editor');
-    };
-    tempVideo.onerror = () => {
+    void fetch(sampleUrl).then(async (response) => {
+      if (!response.ok) throw new Error('Sample asset unavailable');
+      const blob = await response.blob();
+      await openUploadedProject(new File([blob], 'sample.mp4', { type: blob.type || 'video/mp4' }));
+    }).catch(() => {
       setVideoData(sampleUrl, 'sample.mp4', 0, 0);
       setCues(SAMPLE_CUES);
       router.push('/editor');
-    };
+    });
   };
 
   // When user selects a file, create object URL and get duration before navigating
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      const tempVideo = document.createElement('video');
-      tempVideo.src = url;
-      tempVideo.onloadedmetadata = () => {
-        setVideoData(url, file.name, file.size, tempVideo.duration || 0);
-        router.push('/editor');
-      };
-      tempVideo.onerror = () => {
-        setVideoData(url, file.name, file.size, 0);
-        router.push('/editor');
-      };
+      void uploadProject(file, language, style).then((project) => {
+        setVideoData(`${backendUrl}/media/${project.id}`, project.title, project.size, project.duration);
+        setProjectId(project.id);
+        router.push(`/editor?project=${encodeURIComponent(project.id)}`);
+      }).catch((error) => console.error('Project upload failed:', error));
     }
   };
 

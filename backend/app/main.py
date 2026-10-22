@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.settings import settings
 from app.api.transcribe import router as transcribe_router
+from app.api.projects import router as projects_router, cleanup_expired_media
+from app.db import Base, engine
 
 app = FastAPI(title="CaptionKit Backend")
 
@@ -20,10 +22,13 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(transcribe_router)
+app.include_router(projects_router)
 
 # Startup check for ffmpeg
 @app.on_event("startup")
 async def check_ffmpeg():
+    Base.metadata.create_all(bind=engine)
+    cleanup_expired_media()
     ffmpeg_path = shutil.which(settings.FFMPEG_PATH) or settings.FFMPEG_PATH
     try:
         subprocess.run([ffmpeg_path, "-version"], capture_output=True, check=True)

@@ -34,6 +34,7 @@ def segment_words_into_cues(
                 "start": start,
                 "end": end,
                 "text": cue_text,
+                "words": [w.model_dump(exclude_none=True) for w in current_words],
             })
         current_words = []
 
@@ -79,6 +80,7 @@ def cues_from_transcription(result: TranscriptionResult) -> List[Dict[str, Any]]
                     "start": round(s.start, 2),
                     "end": round(s.end, 2),
                     "text": s.text.strip(),
+                    "words": [w.model_dump(exclude_none=True) for w in s.words],
                 })
         return cues
     elif result.text.strip():
@@ -87,5 +89,6 @@ def cues_from_transcription(result: TranscriptionResult) -> List[Dict[str, Any]]
             "start": 0.0,
             "end": 5.0,
             "text": result.text.strip(),
+            "words": [],
         }]
     return []
