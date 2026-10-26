@@ -4,7 +4,7 @@ import logging
 import asyncio
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, Form, BackgroundTasks, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, BackgroundTasks, HTTPException, Depends
 from fastapi.responses import JSONResponse
 
 from app.services.jobs import job_store, JobState
@@ -14,6 +14,8 @@ from app.services.segmentation import cues_from_transcription
 from app.api.projects import project_media_path
 from app.db import SessionLocal
 from app.models import Cue, Project
+from app.models import User
+from app.api.auth import get_current_user, owned_project
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["transcription"])
@@ -114,7 +116,11 @@ async def start_transcription(
     language: Optional[str] = Form(None),
     style: Optional[str] = Form("roman"),
     provider: Optional[str] = Form(None),
+    user: User = Depends(get_current_user),
 ):
+    if project_id:
+        with SessionLocal() as db:
+            owned_project(db, project_id, user)
     cleanup_input = True
     if file is not None:
         suffix = os.path.splitext(file.filename or "")[1] or ".mp4"
@@ -131,7 +137,7 @@ async def start_transcription(
     else:
         raise HTTPException(status_code=422, detail="Provide a video file or project_id")
 
-    job = job_store.create()
+    job = job_store.create(user_id=user.id, project_id=project_id)
     background_tasks.add_task(
         process_transcription_job,
         job.id,
@@ -146,8 +152,8 @@ async def start_transcription(
     return {"job_id": job.id, "status": "queued"}
 
 @router.get("/jobs/{job_id}")
-async def get_job_status(job_id: str):
+async def get_job_status(job_id: str, user: User = Depends(get_current_user)):
     job = job_store.get(job_id)
-    if not job:
+    if not job or job.user_id != user.id:
         raise HTTPException(status_code=404, detail="Job not found")
     return job.model_dump()

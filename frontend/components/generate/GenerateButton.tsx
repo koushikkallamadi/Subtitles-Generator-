@@ -37,7 +37,7 @@ export default function GenerateButton() {
         formData.append("project_id", projectId);
       } else {
         setProgress(20);
-        const mediaResponse = await fetch(videoUrl);
+        const mediaResponse = await fetch(videoUrl, { credentials: "include" });
         const blob = await mediaResponse.blob();
         formData.append("file", blob, projectName || "video.mp4");
       }
@@ -48,6 +48,7 @@ export default function GenerateButton() {
       setProgress(35);
       const postRes = await fetch(`${backendUrl}/api/transcribe`, {
         method: "POST",
+        credentials: "include",
         body: formData,
       });
 
@@ -68,7 +69,7 @@ export default function GenerateButton() {
         await new Promise((r) => setTimeout(r, 1200));
 
         try {
-          const pollRes = await fetch(`${backendUrl}/api/jobs/${jobId}`);
+          const pollRes = await fetch(`${backendUrl}/api/jobs/${jobId}`, { credentials: "include" });
           if (pollRes.ok) {
             const job = await pollRes.json();
             if (job.progress) {

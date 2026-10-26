@@ -12,6 +12,7 @@ import Timeline from "../../components/Timeline";
 import TranscriptTab from "../../components/TranscriptTab";
 import CaptionOverlay from "../../components/style/CaptionOverlay";
 import { backendUrl, fetchProject, fetchProjectCues, patchProject, saveProjectCues, uploadProject } from "../../lib/projects";
+import { useAuth } from "../../components/AuthProvider";
 
 export default function EditorPage() {
   return <Suspense fallback={<div className="grid h-screen place-items-center bg-[#0b0f1a] text-sm text-gray-300">Loading project…</div>}><EditorContent /></Suspense>;
@@ -20,6 +21,7 @@ export default function EditorPage() {
 function EditorContent() {
   const router = useRouter();
   const queryProjectId = useSearchParams().get("project");
+  const { user, loading: authLoading, requireLogin } = useAuth();
   const store = useVideoStore();
   const { videoUrl, projectName, duration: storeDuration, cues, timingOffset } = store;
 
@@ -35,6 +37,12 @@ function EditorContent() {
 
   useEffect(() => {
     const projectId = queryProjectId || useVideoStore.getState().projectId;
+    if (authLoading) return;
+    if (projectId && !user) {
+      setProjectLoading(false);
+      void requireLogin(undefined, `/editor?project=${encodeURIComponent(projectId)}`);
+      return;
+    }
     if (!projectId) {
       setProjectLoading(false);
       if (!useVideoStore.getState().videoUrl) router.push("/");
@@ -61,7 +69,7 @@ function EditorContent() {
       if (!cancelled) { setLoadError(error instanceof Error ? error.message : "Could not load project."); setProjectLoading(false); }
     });
     return () => { cancelled = true; };
-  }, [router, queryProjectId]);
+  }, [router, queryProjectId, authLoading, user, requireLogin]);
 
   useEffect(() => {
     if (projectLoading || !store.projectId) return;
@@ -158,6 +166,7 @@ useEffect(() => {
             <div className="relative flex h-full max-h-full w-full items-center justify-center rounded-2xl bg-black overflow-hidden shadow-2xl">
               <video
                 ref={videoRef}
+                crossOrigin="use-credentials"
                 src={videoUrl}
 
                 onLoadedMetadata={() => {

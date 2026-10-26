@@ -6,15 +6,18 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.core.settings import settings
 from app.db import SessionLocal
-from app.models import Cue, Project
+from app.models import Cue, Project, User
+from app.api.auth import get_current_user, owned_project
 from app.services.media import get_media_duration
+from app.services import export as export_service
+from app.services.export import get_job, start_job
 
 router = APIRouter(tags=["projects"])
 STORAGE_ROOT = Path(__file__).resolve().parents[2] / "storage"
@@ -36,6 +39,12 @@ class CueInput(BaseModel):
     words_json: list[dict[str, Any]] = Field(default_factory=list)
     words: list[dict[str, Any]] | None = None
     linked: bool = True
+
+
+class ExportRequest(BaseModel):
+    style: dict[str, Any] | None = None
+    captionStyle: dict[str, Any] | None = None
+    timingOffset: float | None = None
 
 
 def project_media_path(project_id: str) -> Path | None:
@@ -61,6 +70,7 @@ async def create_project(
     title: str | None = Form(None),
     language: str = Form("Hindi"),
     style: str = Form("roman"),
+    user: User = Depends(get_current_user),
 ):
     original_name = Path(file.filename or "video.mp4").name
     suffix = Path(original_name).suffix.lower()
@@ -79,7 +89,7 @@ async def create_project(
         duration = get_media_duration(str(destination))
         project = Project(
             id=project_id, title=(title or Path(original_name).stem)[:255], file_name=original_name[:255],
-            size=size, duration=duration, language=language[:64], style=style[:32], settings_json={},
+            size=size, duration=duration, language=language[:64], style=style[:32], settings_json={}, user_id=user.id,
         )
         with SessionLocal() as db:
             db.add(project)
@@ -94,27 +104,23 @@ async def create_project(
 
 
 @router.get("/projects")
-def list_projects():
+def list_projects(user: User = Depends(get_current_user)):
     with SessionLocal() as db:
-        projects = db.scalars(select(Project).order_by(Project.updated_at.desc())).all()
+        projects = db.scalars(select(Project).where(Project.user_id == user.id).order_by(Project.updated_at.desc())).all()
         return [project_dict(project) for project in projects]
 
 
 @router.get("/projects/{project_id}")
-def get_project(project_id: str):
+def get_project(project_id: str, user: User = Depends(get_current_user)):
     with SessionLocal() as db:
-        project = db.get(Project, project_id)
-        if project is None:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = owned_project(db, project_id, user)
         return project_dict(project)
 
 
 @router.patch("/projects/{project_id}")
-def patch_project(project_id: str, patch: ProjectPatch):
+def patch_project(project_id: str, patch: ProjectPatch, user: User = Depends(get_current_user)):
     with SessionLocal() as db:
-        project = db.get(Project, project_id)
-        if project is None:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = owned_project(db, project_id, user)
         values = patch.model_dump(exclude_unset=True)
         for key, value in values.items():
             if value is not None:
@@ -126,34 +132,95 @@ def patch_project(project_id: str, patch: ProjectPatch):
 
 
 @router.delete("/projects/{project_id}")
-def delete_project(project_id: str):
+def delete_project(project_id: str, user: User = Depends(get_current_user)):
     folder = STORAGE_ROOT / project_id
     with SessionLocal() as db:
-        project = db.get(Project, project_id)
-        if project is None:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = owned_project(db, project_id, user)
         db.delete(project)
         db.commit()
     shutil.rmtree(folder, ignore_errors=True)
     return {"deleted": True, "id": project_id}
 
 
-@router.get("/projects/{project_id}/cues")
-def get_project_cues(project_id: str):
+@router.post("/projects/{project_id}/export/{kind}")
+def start_project_export(project_id: str, kind: str, payload: ExportRequest | None = None, user: User = Depends(get_current_user)):
+    if kind not in {"video", "greenscreen"}:
+        raise HTTPException(status_code=422, detail="Export kind must be 'video' or 'greenscreen'")
     with SessionLocal() as db:
-        if db.get(Project, project_id) is None:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = owned_project(db, project_id, user)
+        if not export_service.subtitles_available:
+            raise HTTPException(status_code=503, detail="FFmpeg subtitles filter/libass is unavailable. Install an FFmpeg build with libass (Windows: winget install -e --id Gyan.FFmpeg) and restart the backend.")
+        source = project_media_path(project_id)
+        if source is None:
+            raise HTTPException(status_code=409, detail="The source video file was deleted or has expired")
+        cues = db.scalars(select(Cue).where(Cue.project_id == project_id).order_by(Cue.idx)).all()
+        if not cues:
+            raise HTTPException(status_code=409, detail="Add or generate at least one subtitle cue before exporting")
+        settings_json = project.settings_json or {}
+        style = (payload.style or payload.captionStyle) if payload else None
+        if not style:
+            style = settings_json.get("captionStyle") or {}
+        offset = payload.timingOffset if payload and payload.timingOffset is not None else settings_json.get("timingOffset", 0)
+        cue_data = [{"start": cue.start, "end": cue.end, "text": cue.text, "words_json": cue.words_json or []} for cue in cues]
+    job_id, existing = start_job(project_id, kind, source, cue_data, style, float(offset or 0))
+    job = get_job(job_id) or {}
+    return {"job_id": job_id, "status": job.get("status", "queued"), "step": job.get("step", "Queued"), "percent": job.get("percent", 0), "indeterminate": job.get("indeterminate", False), "existing": existing}
+
+
+@router.get("/jobs/{job_id}")
+def read_export_job(job_id: str, user: User = Depends(get_current_user)):
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Export job not found")
+    with SessionLocal() as db:
+        owned_project(db, str(job.get("project_id", "")), user)
+    return job
+
+
+@router.post("/jobs/{job_id}/cancel")
+def cancel_export_job(job_id: str, user: User = Depends(get_current_user)):
+    current = get_job(job_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="Export job not found")
+    with SessionLocal() as db:
+        owned_project(db, str(current.get("project_id", "")), user)
+    job = export_service.cancel_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Export job not found")
+    return {"job_id": job_id, "cancel_requested": job.get("status") not in {"done", "error"}, "status": job.get("status")}
+
+
+@router.get("/projects/{project_id}/export/{kind}/download")
+def download_project_export(project_id: str, kind: str, user: User = Depends(get_current_user)):
+    if kind not in {"video", "greenscreen"}:
+        raise HTTPException(status_code=422, detail="Export kind must be 'video' or 'greenscreen'")
+    with SessionLocal() as db:
+        owned_project(db, project_id, user)
+    path = STORAGE_ROOT / project_id / f"export_{kind}.mp4"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Export is not ready. Start the export and wait for it to complete.")
+
+    def stream_export():
+        with path.open("rb") as source:
+            while chunk := source.read(1024 * 1024):
+                yield chunk
+
+    return StreamingResponse(stream_export(), media_type="video/mp4", headers={"Content-Disposition": f'attachment; filename="export_{kind}.mp4"'})
+
+
+@router.get("/projects/{project_id}/cues")
+def get_project_cues(project_id: str, user: User = Depends(get_current_user)):
+    with SessionLocal() as db:
+        owned_project(db, project_id, user)
         cues = db.scalars(select(Cue).where(Cue.project_id == project_id).order_by(Cue.idx)).all()
         return [{"idx": cue.idx, "start": cue.start, "end": cue.end, "text": cue.text,
                  "words_json": cue.words_json or [], "linked": cue.linked} for cue in cues]
 
 
 @router.put("/projects/{project_id}/cues")
-def put_project_cues(project_id: str, cues: list[CueInput]):
+def put_project_cues(project_id: str, cues: list[CueInput], user: User = Depends(get_current_user)):
     with SessionLocal() as db:
-        project = db.get(Project, project_id)
-        if project is None:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = owned_project(db, project_id, user)
         db.query(Cue).filter(Cue.project_id == project_id).delete(synchronize_session=False)
         for position, item in enumerate(cues):
             if item.end <= item.start:
@@ -169,10 +236,9 @@ def put_project_cues(project_id: str, cues: list[CueInput]):
 
 
 @router.get("/media/{project_id}")
-def get_project_media(project_id: str, request: Request):
+def get_project_media(project_id: str, request: Request, user: User = Depends(get_current_user)):
     with SessionLocal() as db:
-        if db.get(Project, project_id) is None:
-            raise HTTPException(status_code=404, detail="Project not found")
+        owned_project(db, project_id, user)
     path = project_media_path(project_id)
     if path is None:
         raise HTTPException(status_code=404, detail="Project media is no longer available")

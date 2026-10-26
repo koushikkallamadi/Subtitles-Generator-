@@ -13,11 +13,12 @@ export type ProjectRecord = {
 };
 
 export type ApiCue = { idx?: number; start: number; end: number; text: string; linked?: boolean; words?: { text: string; start: number; end: number }[]; words_json?: { text: string; start: number; end: number }[] };
+export type ExportJob = { job_id: string; id?: string; status: 'queued' | 'running' | 'done' | 'error'; step: string; percent: number | null; indeterminate?: boolean; error?: string | null; timings?: Record<string, number> };
 
-export const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
+export const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${backendUrl}${path}`, init);
+  const response = await fetch(`${backendUrl}${path}`, { ...init, credentials: 'include' });
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
     try { const payload = await response.json(); message = payload.detail || message; } catch { /* use status text */ }
@@ -44,3 +45,15 @@ export function fetchProjectCues(id: string) { return apiRequest<ApiCue[]>(`/pro
 export function saveProjectCues(id: string, cues: ApiCue[]) {
   return apiRequest<{ saved: number }>(`/projects/${encodeURIComponent(id)}/cues`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cues.map((cue, idx) => ({ ...cue, idx, words_json: cue.words || cue.words_json || [] }))) });
 }
+export function startProjectExport(id: string, kind: 'video' | 'greenscreen', style: unknown, timingOffset: number) {
+  return apiRequest<ExportJob>(`/projects/${encodeURIComponent(id)}/export/${kind}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ style, timingOffset }) });
+}
+export function fetchExportJob(id: string) {
+  type ExportJobResponse = Omit<ExportJob, 'job_id'> & { job_id?: string };
+  return apiRequest<ExportJobResponse>(`/jobs/${encodeURIComponent(id)}`).then((job) => ({
+    ...job,
+    // The create endpoint returns job_id, while the status endpoint calls it id.
+    job_id: job.job_id || job.id || id,
+  }));
+}
+export function cancelExportJob(id: string) { return apiRequest<{ job_id: string; cancel_requested: boolean; status: string }>(`/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' }); }

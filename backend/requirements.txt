@@ -10,3 +10,5 @@ python-dotenv==1.2.4
 ffmpeg-python==0.2.0
 httpx==0.28.1
 faster-whisper==1.2.1
+google-auth==2.62.0
+truststore==0.10.5

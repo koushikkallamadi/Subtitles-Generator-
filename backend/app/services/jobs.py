@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 
 class JobState(BaseModel):
     id: str
+    user_id: Optional[str] = None
+    project_id: Optional[str] = None
     status: str = "queued" # queued, processing, completed, failed
     progress: int = 0
     cues: List[Dict[str, Any]] = Field(default_factory=list)
@@ -21,9 +23,9 @@ class JobStore:
     def __init__(self):
         self._jobs: Dict[str, JobState] = {}
 
-    def create(self) -> JobState:
+    def create(self, user_id: Optional[str] = None, project_id: Optional[str] = None) -> JobState:
         job_id = str(uuid.uuid4())
-        job = JobState(id=job_id)
+        job = JobState(id=job_id, user_id=user_id, project_id=project_id)
         self._jobs[job_id] = job
         return job
 

@@ -5,6 +5,10 @@ from pydantic import Field, validator
 class Settings(BaseSettings):
     # Core
     SECRET_KEY: str = Field(default="dev-secret-key", env="SECRET_KEY")
+    GOOGLE_CLIENT_ID: str = Field(default="", env="GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET: str = Field(default="", env="GOOGLE_CLIENT_SECRET")
+    FRONTEND_URL: str = Field(default="http://localhost:3000", env="FRONTEND_URL")
+    BACKEND_URL: str = Field(default="http://127.0.0.1:8000", env="BACKEND_URL")
     DATABASE_URL: str = Field(default="sqlite:///./captionkit.db", env="DATABASE_URL")
     MEDIA_RETENTION_DAYS: int = Field(default=7, env="MEDIA_RETENTION_DAYS")
     FFMPEG_PATH: str = Field(default="ffmpeg", env="FFMPEG_PATH")
