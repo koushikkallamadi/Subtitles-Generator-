@@ -4,9 +4,11 @@ import React, { useState } from "react";
 import { Sparkles, Loader2, AlertCircle, CheckCircle, Info } from "lucide-react";
 import { useVideoStore } from "../../store/videoStore";
 import { backendUrl } from "../../lib/projects";
+import { useAuth } from "../../components/AuthProvider";
 
 export default function GenerateButton() {
   const { videoUrl, projectName, language, style, duration, projectId, setCues } = useVideoStore();
+  const { refreshUser } = useAuth();
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [toast, setToast] = useState<{ message: string; type: "info" | "warning" | "error" | "success" } | null>(null);
@@ -53,12 +55,20 @@ export default function GenerateButton() {
       });
 
       if (!postRes.ok) {
-        const errorText = await postRes.text();
-        throw new Error(`Server returned error ${postRes.status}: ${errorText}`);
+        let message = `Server returned error ${postRes.status}.`;
+        try {
+          const payload = await postRes.json();
+          if (typeof payload.detail === "string") message = payload.detail;
+        } catch {
+          // Keep the status message when the server doesn't return JSON.
+        }
+        showToast(message, postRes.status === 402 ? "warning" : "error");
+        return;
       }
 
       const postData = await postRes.json();
       const jobId = postData.job_id;
+      await refreshUser();
 
       // Poll job status
       let jobCompleted = false;
@@ -79,6 +89,7 @@ export default function GenerateButton() {
             if (job.status === "completed") {
               jobCompleted = true;
               setProgress(100);
+              await refreshUser();
 
               if (job.cues && job.cues.length > 0) {
                 setCues(job.cues);
@@ -101,6 +112,7 @@ export default function GenerateButton() {
               }
               break;
             } else if (job.status === "failed") {
+              await refreshUser();
               throw new Error(job.error || "Transcription job failed.");
             }
           }

@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # Credits
     FREE_MAX_SECONDS: int = Field(default=240, env="FREE_MAX_SECONDS")
-    FREE_INITIAL_CREDITS: float = Field(default=24.0, env="FREE_INITIAL_CREDITS")
+    FREE_INITIAL_CREDITS: float = Field(default=5.0, env="FREE_INITIAL_CREDITS")
     CREDIT_COST_PER_MINUTE: float = Field(default=1.0, env="CREDIT_COST_PER_MINUTE")
     TRANSLATION_COST_PER_MINUTE: float = Field(default=0.5, env="TRANSLATION_COST_PER_MINUTE")
 
@@ -45,6 +45,11 @@ class Settings(BaseSettings):
         if v.lower() not in {"gemini", "openai"}:
             raise ValueError("TRANSLATION_PROVIDER must be 'gemini' or 'openai'")
         return v.lower()
+
+    @validator("FREE_INITIAL_CREDITS")
+    def cap_initial_credits(cls, value):
+        # Keep legacy .env values from granting more than the current 5-credit trial.
+        return min(max(float(value), 0.0), 5.0)
 
     @validator("SARVAM_API_KEY", pre=True)
     def fallback_sarvam_key(cls, v):
