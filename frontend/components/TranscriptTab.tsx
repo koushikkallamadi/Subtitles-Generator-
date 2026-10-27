@@ -8,12 +8,13 @@ import StyleExportTab from './style/StyleExportTab';
 const languages = ['English', 'Hindi', 'Telugu', 'Tamil', 'Marathi', 'Urdu', 'Kannada', 'Bengali', 'Malayalam', 'Gujarati'];
 const headerClass = 'flex w-full items-center justify-between border-b border-[#dc735c]/25 bg-[#322421] px-3 py-3 text-left text-sm font-semibold text-[#dc735c]';
 
-export default function TranscriptTab({ onRegenerate }: { onRegenerate?: () => void }) {
+export default function TranscriptTab({ onRegenerate }: { onRegenerate?: () => void | Promise<void> }) {
   const store = useVideoStore();
   const { cues } = store;
   const [activeTab, setActiveTab] = useState<'transcript' | 'style'>('transcript');
   const [showSettings, setShowSettings] = useState(true), [showCues, setShowCues] = useState(true);
   const [toast, setToast] = useState('');
+  const [regenerating, setRegenerating] = useState(false);
   const [playhead, setPlayhead] = useState(-1);
   const cueList = useRef<HTMLDivElement>(null);
   const initial = useRef({ cues: JSON.stringify(store.originalCues), offset: 0, maxWords: 4, maxLines: 2 });
@@ -42,6 +43,14 @@ export default function TranscriptTab({ onRegenerate }: { onRegenerate?: () => v
     if (store.cues.some((cue) => cue.manuallyEdited) && !window.confirm('Re-segmenting replaces your manual cue edits. Continue?')) return;
     store.resegmentCues(maxWords, lines);
   };
+  const regenerate = async () => {
+    if (!onRegenerate || regenerating) return;
+    if (store.cues.some((cue) => cue.manuallyEdited) && !window.confirm('Regenerating replaces your cue edits. Continue?')) return;
+    setRegenerating(true);
+    try { await onRegenerate(); setToast('Captions regenerated.'); }
+    catch (error) { setToast(error instanceof Error ? error.message : 'Could not regenerate captions.'); }
+    finally { setRegenerating(false); }
+  };
   return <div className="flex min-h-0 flex-1 flex-col overflow-hidden text-white">
     <div className="sticky top-0 z-20 grid shrink-0 grid-cols-2 border-b border-gray-700/80 bg-[#1a1e2b]">
       <button onClick={() => setActiveTab('transcript')} className={`flex items-center justify-center gap-2 border-b-2 px-2 py-3 text-sm font-semibold ${activeTab === 'transcript' ? 'border-[#dc735c] text-[#dc735c]' : 'border-transparent text-gray-400 hover:text-white'}`}><List size={16} />Transcript</button>
@@ -49,7 +58,7 @@ export default function TranscriptTab({ onRegenerate }: { onRegenerate?: () => v
     </div>
     <div className="sticky top-[46px] z-20 flex shrink-0 items-center justify-end gap-2 border-b border-gray-800 bg-[#1a1e2b] px-3 py-2">
       <button disabled={!changed} onClick={() => { store.resetCues(); initial.current = { cues: JSON.stringify(store.originalCues), offset: 0, maxWords: 4, maxLines: 2 }; }} className="flex items-center gap-1 rounded-lg bg-[#282a30] px-2.5 py-1.5 text-xs text-[#dc735c] hover:bg-[#343137] disabled:cursor-default disabled:opacity-35"><RotateCcw size={13} />Reset</button>
-      <button onClick={onRegenerate} className="rounded-lg border border-gray-700 px-2.5 py-1.5 text-xs text-gray-300 hover:border-gray-500 hover:text-white">Regenerate</button>
+      <button disabled={!onRegenerate || regenerating} onClick={() => void regenerate()} className="rounded-lg border border-gray-700 px-2.5 py-1.5 text-xs text-gray-300 hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50">{regenerating ? 'Regenerating…' : 'Regenerate'}</button>
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto">
       {activeTab === 'style' ? <StyleExportTab /> : <>
@@ -61,7 +70,7 @@ export default function TranscriptTab({ onRegenerate }: { onRegenerate?: () => v
         <button onClick={() => setShowCues(!showCues)} className={headerClass}><span>Cues ({cues.length})</span>{showCues ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
         {showCues && <>
           <div className="border-b border-gray-800 px-3 py-3"><div className="relative"><Languages size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><select defaultValue="" onChange={(event) => { if (event.target.value) setToast('Translation coming soon'); event.target.value = ''; }} className="w-full appearance-none rounded-full border border-gray-700 bg-[#22252b] py-2.5 pl-9 pr-9 text-sm text-gray-300 outline-none focus:border-gray-500"><option value="">Translate to</option>{languages.map((language) => <option key={language}>{language}</option>)}</select><ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" /></div></div>
-          <div ref={cueList} className="flex flex-col gap-3 p-3">{cues.map((cue, index) => <CueCard key={`${index}-${cue.start}`} cue={cue} index={index} current={index === playhead} />)}</div>
+          <div ref={cueList} className="flex flex-col gap-3 p-3">{cues.map((cue, index) => <CueCard key={index} cue={cue} index={index} current={index === playhead} />)}</div>
         </>}
       </section>
       </>}

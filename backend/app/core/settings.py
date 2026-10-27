@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     FREE_INITIAL_CREDITS: float = Field(default=5.0, env="FREE_INITIAL_CREDITS")
     CREDIT_COST_PER_MINUTE: float = Field(default=1.0, env="CREDIT_COST_PER_MINUTE")
     TRANSLATION_COST_PER_MINUTE: float = Field(default=0.5, env="TRANSLATION_COST_PER_MINUTE")
+    TIMING_STRATEGY: str = Field(default="hybrid", env="TIMING_STRATEGY")
 
     @validator("TRANSCRIPTION_PROVIDER")
     def validate_transcription_provider(cls, v):
@@ -45,6 +46,13 @@ class Settings(BaseSettings):
         if v.lower() not in {"gemini", "openai"}:
             raise ValueError("TRANSLATION_PROVIDER must be 'gemini' or 'openai'")
         return v.lower()
+
+    @validator("TIMING_STRATEGY")
+    def validate_timing_strategy(cls, value):
+        normalized = value.lower().strip()
+        if normalized not in {"hybrid", "estimate", "forced"}:
+            raise ValueError("TIMING_STRATEGY must be 'hybrid', 'estimate', or 'forced'")
+        return normalized
 
     @validator("FREE_INITIAL_CREDITS")
     def cap_initial_credits(cls, value):

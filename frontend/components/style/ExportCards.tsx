@@ -3,6 +3,8 @@ import { Clock3, Download, FileText, Film, LoaderCircle, Star } from 'lucide-rea
 import { useVideoStore } from '../../store/videoStore';
 import { SectionHeading } from './PresetGrid';
 import { backendUrl, cancelExportJob, fetchExportJob, startProjectExport, type ExportJob } from '../../lib/projects';
+import { breakCaptionLines } from '../../lib/captionLines';
+import { scaleToFontPixels } from '../../lib/captionStyle';
 
 function stamp(seconds: number, separator: ',' | '.') {
   const total = Math.max(0, Math.round((seconds + useVideoStore.getState().timingOffset) * 1000));
@@ -11,8 +13,9 @@ function stamp(seconds: number, separator: ',' | '.') {
 }
 
 function download(format: 'srt' | 'vtt') {
-  const { cues, projectName } = useVideoStore.getState();
-  const entries = cues.map((cue, index) => `${format === 'srt' ? `${index + 1}\n` : ''}${stamp(cue.start, format === 'srt' ? ',' : '.')} --> ${stamp(cue.end, format === 'srt' ? ',' : '.')}\n${cue.text}`).join('\n\n');
+  const { cues, projectName, captionStyle, maxWordsPerLine, maxLinesPerSubtitle } = useVideoStore.getState();
+  const lineWidth = 1920 * 0.85 / scaleToFontPixels(captionStyle.scale, 1080);
+  const entries = cues.map((cue, index) => `${format === 'srt' ? `${index + 1}\n` : ''}${stamp(cue.start, format === 'srt' ? ',' : '.')} --> ${stamp(cue.end, format === 'srt' ? ',' : '.')}\n${breakCaptionLines(cue.text, lineWidth, maxWordsPerLine, maxLinesPerSubtitle).map((line) => line.join(' ')).join('\n')}`).join('\n\n');
   const content = format === 'vtt' ? `WEBVTT\n\n${entries}` : entries;
   const blob = new Blob([new Uint8Array([0xef, 0xbb, 0xbf]), content], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob), anchor = document.createElement('a');

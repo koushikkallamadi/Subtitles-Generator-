@@ -8,7 +8,8 @@ function SettingRow({ label, hint, chip, value, min, max, step = 1, onChange }: 
   const commit = () => {
     const parsed = Number(draft);
     if (!draft.trim() || !Number.isFinite(parsed)) { setDraft(String(value)); return; }
-    const next = Math.max(min, Math.min(max ?? Number.POSITIVE_INFINITY, parsed));
+    const stepped = min + Math.round((parsed - min) / step) * step;
+    const next = Math.max(min, Math.min(max ?? Number.POSITIVE_INFINITY, Math.round(stepped * 1000) / 1000));
     setDraft(String(next));
     if (next !== value) onChange(next);
   };
@@ -24,7 +25,7 @@ function SettingRow({ label, hint, chip, value, min, max, step = 1, onChange }: 
 export default function SettingsPanel({ onResegment }: { onResegment: (maxWords: number, lines: number) => void }) {
   const { timingOffset, setTimingOffset, maxWordsPerLine, maxLinesPerSubtitle } = useVideoStore();
   return <div className="divide-y divide-gray-800/80 bg-[#171a20] py-1">
-    <SettingRow label="Timing offset" hint="Shift subtitle timing in seconds. Negative values are allowed." chip="S" value={timingOffset} min={-60} max={60} step={0.01} onChange={setTimingOffset} />
+    <SettingRow label="Caption sync" hint="Adjust when captions appear relative to the video." chip="S" value={timingOffset} min={-1} max={1} step={0.05} onChange={setTimingOffset} />
     <SettingRow label="Max words per line" hint="Maximum words shown on one subtitle line." chip="#" value={maxWordsPerLine} min={1} max={10} onChange={(value) => onResegment(Math.max(1, Math.min(10, value)), maxLinesPerSubtitle)} />
     <SettingRow label="Lines per Subtitle" hint="Maximum lines shown in one subtitle cue." chip="L" value={maxLinesPerSubtitle} min={1} max={3} onChange={(value) => onResegment(maxWordsPerLine, Math.max(1, Math.min(3, value)))} />
   </div>;

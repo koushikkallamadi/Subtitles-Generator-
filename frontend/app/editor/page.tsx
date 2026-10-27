@@ -21,7 +21,7 @@ export default function EditorPage() {
 function EditorContent() {
   const router = useRouter();
   const queryProjectId = useSearchParams().get("project");
-  const { user, loading: authLoading, requireLogin } = useAuth();
+  const { user, loading: authLoading, requireLogin, refreshUser } = useAuth();
   const store = useVideoStore();
   const { videoUrl, projectName, duration: storeDuration, cues, timingOffset } = store;
 
@@ -52,7 +52,7 @@ function EditorContent() {
     let cancelled = false;
     void Promise.all([fetchProject(projectId), fetchProjectCues(projectId)]).then(([project, apiCues]) => {
       if (cancelled) return;
-      const mappedCues = apiCues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked ?? true, words: cue.words || cue.words_json || [], manuallyEdited: false }));
+      const mappedCues = apiCues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked ?? true, timing_quality: cue.timing_quality ?? "estimated", words: cue.words || cue.words_json || [], manuallyEdited: false }));
       const settings = project.settings_json || {};
       useVideoStore.setState({
         projectId: project.id, videoUrl: project.media_available ? `${backendUrl}/media/${project.id}` : null,
@@ -60,7 +60,7 @@ function EditorContent() {
         language: project.language, style: project.style, cues: mappedCues, originalCues: mappedCues.map((cue) => ({ ...cue, words: cue.words?.map((word) => ({ ...word })) })),
         captionStyle: validateCaptionStyle(settings.captionStyle || DEFAULT_CAPTION_STYLE),
         selectedCaptionPreset: detectCaptionPreset(validateCaptionStyle(settings.captionStyle || DEFAULT_CAPTION_STYLE)),
-        timingOffset: Number(settings.timingOffset ?? 0), maxWordsPerLine: Number(settings.maxWordsPerLine ?? 4), maxLinesPerSubtitle: Number(settings.maxLinesPerSubtitle ?? 2), savingState: "saved",
+        timingOffset: Math.max(-1, Math.min(1, Number(settings.timingOffset ?? 0))), maxWordsPerLine: Number(settings.maxWordsPerLine ?? 4), maxLinesPerSubtitle: Number(settings.maxLinesPerSubtitle ?? 2), savingState: "saved",
       });
       setDuration(project.duration || 0);
       setMediaMissing(!project.media_available);
@@ -80,7 +80,7 @@ function EditorContent() {
       latest.setSavingState("saving");
       const settings_json = { timingOffset: latest.timingOffset, maxWordsPerLine: latest.maxWordsPerLine, maxLinesPerSubtitle: latest.maxLinesPerSubtitle, captionStyle: latest.captionStyle };
       void Promise.all([
-        saveProjectCues(latest.projectId!, latest.cues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked, words: cue.words || [] }))),
+        saveProjectCues(latest.projectId!, latest.cues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked, timing_quality: cue.timing_quality, words: cue.words || [] }))),
         patchProject(latest.projectId!, { language: latest.language, style: latest.style, duration: latest.duration, settings_json }),
       ]).then(() => { if (saveRevision.current === revision) useVideoStore.getState().setSavingState("saved"); })
         .catch(() => { if (saveRevision.current === revision) useVideoStore.getState().setSavingState("error"); });
@@ -89,7 +89,7 @@ function EditorContent() {
   }, [projectLoading, mediaMissing, store.projectId, store.cues, store.timingOffset, store.maxWordsPerLine, store.maxLinesPerSubtitle, store.language, store.style, store.duration, store.captionStyle]);
 
   const activeCue = cues?.find(
-    (c) => currentTime >= (c.start + timingOffset - 0.1) && currentTime <= (c.end + timingOffset)
+    (c) => currentTime >= (c.start + timingOffset) && currentTime < (c.end + timingOffset)
   );
 
   useEffect(() => {
@@ -104,18 +104,23 @@ function EditorContent() {
     }
   }, [storeDuration, duration]);
 useEffect(() => {
-  let rafId: number;
-  const update = () => {
-    if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
-    }
-    rafId = requestAnimationFrame(update);
+  const video = videoRef.current;
+  if (!video || !isPlaying) return;
+  let frameId = 0;
+  let animationId = 0;
+  const onVideoFrame = (_now: number, metadata: VideoFrameCallbackMetadata) => {
+    setCurrentTime(metadata.mediaTime);
+    frameId = video.requestVideoFrameCallback(onVideoFrame);
   };
-  if (isPlaying) {
-    rafId = requestAnimationFrame(update);
-  }
+  const onAnimationFrame = () => {
+    setCurrentTime(video.currentTime);
+    animationId = requestAnimationFrame(onAnimationFrame);
+  };
+  if ('requestVideoFrameCallback' in video) frameId = video.requestVideoFrameCallback(onVideoFrame);
+  else animationId = requestAnimationFrame(onAnimationFrame);
   return () => {
-    if (rafId) cancelAnimationFrame(rafId);
+    if (frameId && 'cancelVideoFrameCallback' in video) video.cancelVideoFrameCallback(frameId);
+    if (animationId) cancelAnimationFrame(animationId);
   };
 }, [isPlaying]);
   const togglePlay = () => {
@@ -134,13 +139,44 @@ useEffect(() => {
     setCurrentTime(time);
   };
 
+  const handleRegenerate = async () => {
+    const latest = useVideoStore.getState();
+    if (!latest.videoUrl) throw new Error('No video loaded.');
+    const formData = new FormData();
+    if (latest.projectId) formData.append('project_id', latest.projectId);
+    else {
+      const media = await fetch(latest.videoUrl, { credentials: 'include' });
+      if (!media.ok) throw new Error('Could not read the video for regeneration.');
+      formData.append('file', await media.blob(), latest.projectName || 'video.mp4');
+    }
+    formData.append('language', latest.language);
+    formData.append('style', latest.style);
+    const submitted = await fetch(`${backendUrl}/api/transcribe`, { method: 'POST', credentials: 'include', body: formData });
+    const submission = await submitted.json().catch(() => ({}));
+    if (!submitted.ok) throw new Error(typeof submission.detail === 'string' ? submission.detail : `Could not start regeneration (${submitted.status}).`);
+    await refreshUser();
+    for (let attempt = 0; attempt < 90; attempt++) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      const response = await fetch(`${backendUrl}/api/jobs/${submission.job_id}`, { credentials: 'include' });
+      if (!response.ok) continue;
+      const job = await response.json();
+      if (job.status === 'failed') throw new Error(job.error || 'Regeneration failed.');
+      if (job.status !== 'completed') continue;
+      if (!Array.isArray(job.cues) || !job.cues.length) throw new Error('No speech was detected. Existing captions were kept.');
+      useVideoStore.getState().setCues(job.cues);
+      await refreshUser();
+      return;
+    }
+    throw new Error('Regeneration timed out.');
+  };
+
   const recoverMissingMedia = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; if (!file) return;
     setReuploading(true); setLoadError("");
     try {
       const project = await uploadProject(file, store.language, store.style);
       useVideoStore.setState({ projectId: project.id, videoUrl: `${backendUrl}/media/${project.id}`, projectName: project.title, fileSize: project.size, duration: project.duration, savingState: "saved" });
-      await saveProjectCues(project.id, store.cues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked, words: cue.words || [] })));
+      await saveProjectCues(project.id, store.cues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked, timing_quality: cue.timing_quality, words: cue.words || [] })));
       await patchProject(project.id, { settings_json: { timingOffset: store.timingOffset, maxWordsPerLine: store.maxWordsPerLine, maxLinesPerSubtitle: store.maxLinesPerSubtitle, captionStyle: store.captionStyle } });
       router.replace(`/editor?project=${encodeURIComponent(project.id)}`);
       setMediaMissing(false);
@@ -209,7 +245,7 @@ useEffect(() => {
         {/* Right sidebar */}
         {cues && cues.length > 0 ? (
           <div className="flex min-w-0 flex-col h-full w-[26rem] bg-[#1a1e2b] p-3">
-            <TranscriptTab />
+            <TranscriptTab onRegenerate={handleRegenerate} />
           </div>
         ) : (
           <GeneratePanel onGenerate={() => console.log("Generate Subtitles clicked")} />

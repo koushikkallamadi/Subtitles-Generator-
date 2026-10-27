@@ -34,6 +34,9 @@ async def check_ffmpeg():
     if "user_id" not in {column["name"] for column in inspect(engine).get_columns("projects")}:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE projects ADD COLUMN user_id VARCHAR(36) NULL"))
+    if "timing_quality" not in {column["name"] for column in inspect(engine).get_columns("cues")}:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE cues ADD COLUMN timing_quality VARCHAR(16) NOT NULL DEFAULT 'estimated'"))
     cleanup_expired_media()
     ffmpeg_path = shutil.which(settings.FFMPEG_PATH) or settings.FFMPEG_PATH
     try:

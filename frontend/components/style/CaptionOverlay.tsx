@@ -40,7 +40,7 @@ export default function CaptionOverlay({ cue, currentTime, videoRef }: { cue?: C
   if (!cue || !bounds) return null;
   const timedWords = cue.words?.length === cue.text.split(/\s+/).filter(Boolean).length;
   const adjustedTime = currentTime - timingOffset;
-  const activeWordIndex = timedWords ? cue.words!.findIndex((word) => adjustedTime >= word.start && adjustedTime <= word.end) : -1;
+  const activeWordIndex = timedWords ? cue.words!.findIndex((word) => adjustedTime >= word.start && adjustedTime < word.end) : -1;
   const revealedWordIndex = timedWords ? cue.words!.reduce((latest, word, index) => word.start <= adjustedTime ? index : latest, -1) : -1;
   const position = positionToPixels(style.position, bounds);
   const begin = (event: ReactPointerEvent<HTMLElement>, mode: 'drag' | 'resize') => {
@@ -62,7 +62,7 @@ export default function CaptionOverlay({ cue, currentTime, videoRef }: { cue?: C
     }
   };
   const end = (event: ReactPointerEvent<HTMLElement>) => { pointer.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); };
-  return <div key={`${cue.start}-${style.animation}`} className="absolute z-10" style={{ left: bounds.left + position.x, top: bounds.top + position.y, transform: 'translate(-50%, -100%)', width: bounds.width * .92, display: 'flex', justifyContent: 'center' }}>
+  return <div key={`${cue.start}-${style.animation}`} className="absolute z-10" style={{ left: bounds.left + position.x, top: bounds.top + position.y, transform: 'translate(-50%, -100%)', width: bounds.width, display: 'flex', justifyContent: 'center' }}>
     <div ref={containerRef} onPointerDown={(event) => begin(event, 'drag')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} className="relative flex max-w-full cursor-move touch-none select-none justify-center rounded-md px-1 py-0.5 text-center shadow-lg">
       <CaptionRenderer style={style} text={cue.text} words={timedWords ? cue.words : undefined} activeWordIndex={activeWordIndex} revealedWordIndex={revealedWordIndex} containerSize={{ width: bounds.width, height: bounds.height }} />
       <button type="button" aria-label="Resize captions" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => begin(event, 'resize')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} className="absolute -bottom-2 -right-2 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border border-white bg-[#dc735c] shadow" />

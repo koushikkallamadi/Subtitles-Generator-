@@ -10,7 +10,8 @@ html {
 @keyframes captionZoom { from { opacity: 0; transform: scale(.78); } to { opacity: 1; transform: scale(1); } }
 @keyframes captionPop { 0% { opacity: 0; transform: scale(.6); } 75% { transform: scale(1.08); } 100% { opacity: 1; transform: scale(1); } }
 @keyframes captionFade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes captionSlide { from { opacity: 0; translate: 0 10px; } to { opacity: 1; translate: 0 0; } }
-@keyframes captionType { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
-.caption-word { animation: captionFade .12s ease-out both; }
+@keyframes captionSlide { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes captionType { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
+.caption-line { display: flex; width: 100%; align-items: baseline; justify-content: center; white-space: nowrap; }
+.caption-word { display: inline-block; vertical-align: baseline; transform-origin: center center; }
 

@@ -121,7 +121,7 @@ async def process_transcription_job(
                 if project:
                     db.query(Cue).filter(Cue.project_id == project_id).delete(synchronize_session=False)
                     for idx, cue in enumerate(cues):
-                        db.add(Cue(project_id=project_id, idx=idx, start=cue["start"], end=cue["end"], text=cue["text"], words_json=cue.get("words", []), linked=True))
+                        db.add(Cue(project_id=project_id, idx=idx, start=cue["start"], end=cue["end"], text=cue["text"], words_json=cue.get("words", []), linked=True, timing_quality=cue.get("timing_quality", "estimated")))
                     project.language = language or project.language
                     project.style = style or project.style
                     project.updated_at = datetime.utcnow()

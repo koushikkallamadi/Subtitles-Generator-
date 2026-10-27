@@ -12,7 +12,7 @@ export type ProjectRecord = {
   media_available: boolean;
 };
 
-export type ApiCue = { idx?: number; start: number; end: number; text: string; linked?: boolean; words?: { text: string; start: number; end: number }[]; words_json?: { text: string; start: number; end: number }[] };
+export type ApiCue = { idx?: number; start: number; end: number; text: string; linked?: boolean; timing_quality?: "aligned" | "estimated"; words?: { text: string; start: number; end: number }[]; words_json?: { text: string; start: number; end: number }[] };
 export type ExportJob = { job_id: string; id?: string; status: 'queued' | 'running' | 'done' | 'error'; step: string; percent: number | null; indeterminate?: boolean; error?: string | null; timings?: Record<string, number> };
 
 export const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';

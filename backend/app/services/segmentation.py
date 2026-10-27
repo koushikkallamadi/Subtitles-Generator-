@@ -11,6 +11,7 @@ def segment_words_into_cues(
     max_chars_per_cue: int = 38,
     max_pause_sec: float = 0.7,
     max_duration_sec: float = 3.5,
+    timing_quality: str = "estimated",
 ) -> List[Dict[str, Any]]:
     """
     Groups word-level timestamps into subtitle cues.
@@ -18,6 +19,16 @@ def segment_words_into_cues(
     """
     if not words:
         return []
+
+    # Repair malformed provider times once so downstream cues stay ordered,
+    # non-overlapping, and have non-zero word spans.
+    normalized: List[WordTimestamp] = []
+    previous_end = 0.0
+    for word in words:
+        start = max(previous_end, 0.0, float(word.start))
+        end = max(start + 0.08, float(word.end))
+        normalized.append(WordTimestamp(text=word.text, start=round(start, 4), end=round(end, 4), confidence=word.confidence))
+        previous_end = end
 
     cues: List[Dict[str, Any]] = []
     current_words: List[WordTimestamp] = []
@@ -28,17 +39,18 @@ def segment_words_into_cues(
             return
         cue_text = " ".join(w.text for w in current_words).strip()
         if cue_text:
-            start = round(current_words[0].start, 2)
-            end = round(max(current_words[-1].end, start + 0.5), 2)
+            start = current_words[0].start
+            end = current_words[-1].end
             cues.append({
                 "start": start,
                 "end": end,
                 "text": cue_text,
                 "words": [w.model_dump(exclude_none=True) for w in current_words],
+                "timing_quality": timing_quality,
             })
         current_words = []
 
-    for i, word in enumerate(words):
+    for i, word in enumerate(normalized):
         if not current_words:
             current_words.append(word)
             continue
@@ -71,16 +83,20 @@ def segment_words_into_cues(
 def cues_from_transcription(result: TranscriptionResult) -> List[Dict[str, Any]]:
     """Convert a TranscriptionResult into subtitle cues."""
     if result.words:
-        return segment_words_into_cues(result.words)
+        quality = result.timing_quality
+        if result.timestamps_estimated:
+            quality = "estimated"
+        return segment_words_into_cues(result.words, timing_quality=quality)
     elif result.segments:
         cues = []
         for s in result.segments:
             if s.text.strip():
                 cues.append({
-                    "start": round(s.start, 2),
-                    "end": round(s.end, 2),
+                    "start": s.words[0].start if s.words else s.start,
+                    "end": s.words[-1].end if s.words else s.end,
                     "text": s.text.strip(),
                     "words": [w.model_dump(exclude_none=True) for w in s.words],
+                    "timing_quality": "aligned" if s.words else "estimated",
                 })
         return cues
     elif result.text.strip():

@@ -39,6 +39,7 @@ class CueInput(BaseModel):
     words_json: list[dict[str, Any]] = Field(default_factory=list)
     words: list[dict[str, Any]] | None = None
     linked: bool = True
+    timing_quality: str = "estimated"
 
 
 class ExportRequest(BaseModel):
@@ -214,7 +215,8 @@ def get_project_cues(project_id: str, user: User = Depends(get_current_user)):
         owned_project(db, project_id, user)
         cues = db.scalars(select(Cue).where(Cue.project_id == project_id).order_by(Cue.idx)).all()
         return [{"idx": cue.idx, "start": cue.start, "end": cue.end, "text": cue.text,
-                 "words_json": cue.words_json or [], "linked": cue.linked} for cue in cues]
+                 "words_json": cue.words_json or [], "linked": cue.linked,
+                 "timing_quality": cue.timing_quality} for cue in cues]
 
 
 @router.put("/projects/{project_id}/cues")
@@ -229,6 +231,7 @@ def put_project_cues(project_id: str, cues: list[CueInput], user: User = Depends
                 project_id=project_id, idx=item.idx if item.idx is not None else position,
                 start=item.start, end=item.end, text=item.text,
                 words_json=item.words if item.words is not None else item.words_json, linked=item.linked,
+                timing_quality=item.timing_quality,
             ))
         project.updated_at = datetime.utcnow()
         db.commit()

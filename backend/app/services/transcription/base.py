@@ -24,6 +24,7 @@ class TranscriptionResult(BaseModel):
     fallback_message: Optional[str] = None
     route_used: Optional[str] = None
     timestamps_estimated: bool = False
+    timing_quality: str = "aligned"
 
 class BaseTranscriptionProvider(ABC):
     @property

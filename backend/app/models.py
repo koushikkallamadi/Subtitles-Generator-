@@ -47,4 +47,5 @@ class Cue(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     words_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     linked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    timing_quality: Mapped[str] = mapped_column(String(16), nullable=False, default="estimated")
     project: Mapped[Project] = relationship(back_populates="cues")
