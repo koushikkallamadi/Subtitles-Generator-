@@ -313,12 +313,19 @@ def build_ass(cues: list[dict[str, Any]], style: dict[str, Any], width: int, hei
 def probe_video(path: Path) -> dict[str, Any]:
     result = subprocess.run([get_ffprobe_cmd(), "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,avg_frame_rate,r_frame_rate,duration:format=duration", "-of", "json", str(path)], capture_output=True, text=True, check=True)
     data = json.loads(result.stdout)
-    stream = data["streams"][0]
-    duration = _num(stream.get("duration"), _num(data.get("format", {}).get("duration"), 0))
+    streams = data.get("streams") or []
+    format_duration = _num(data.get("format", {}).get("duration"), 0)
+    if not streams:
+        # Audio-only media has no video stream to index. The green-screen
+        # export uses these dimensions, and the full-video export uses them
+        # for its black caption canvas.
+        return {"width": 1920, "height": 1080, "fps": "30/1", "duration": format_duration if format_duration > 0 else None, "has_video": False}
+    stream = streams[0]
+    duration = _num(stream.get("duration"), format_duration)
     fps = stream.get("avg_frame_rate") or stream.get("r_frame_rate") or "30/1"
     if fps in ("0/0", "0/1"):
         fps = stream.get("r_frame_rate") or "30/1"
-    return {"width": int(stream["width"]), "height": int(stream["height"]), "fps": fps, "duration": duration if duration > 0 else None}
+    return {"width": int(stream["width"]), "height": int(stream["height"]), "fps": fps, "duration": duration if duration > 0 else None, "has_video": True}
 
 
 def _filter_path(path: Path) -> str:
@@ -335,7 +342,13 @@ def _run_ffmpeg(job_id: str, kind: str, source: Path, output: Path, ass_path: Pa
     fonts_arg = f":fontsdir={_filter_path(FONTS_DIR)}"
     vf = f"subtitles=filename={_filter_path(ass_path)}{fonts_arg}"
     if kind == "video":
-        command = [get_ffmpeg_cmd(), "-hide_banner", "-y", "-i", str(source), "-vf", vf, "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output)]
+        if metadata.get("has_video", True):
+            command = [get_ffmpeg_cmd(), "-hide_banner", "-y", "-i", str(source), "-vf", vf, "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output)]
+        else:
+            duration = metadata.get("duration")
+            if not duration:
+                raise ExportFailure("Audio duration is unknown; cannot create the caption video")
+            command = [get_ffmpeg_cmd(), "-hide_banner", "-y", "-f", "lavfi", "-i", f"color=c=black:s={metadata['width']}x{metadata['height']}:r={metadata['fps']}:d={duration:.6f}", "-i", str(source), "-vf", vf, "-t", f"{duration:.6f}", "-map", "0:v:0", "-map", "1:a?", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output)]
     else:
         duration = metadata["duration"]
         if not duration:

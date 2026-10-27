@@ -24,7 +24,7 @@ from google.oauth2 import id_token
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.settings import settings
+from app.core.settings import INITIAL_USER_CREDITS, settings
 from app.db import SessionLocal
 from app.models import Project, User
 
@@ -187,7 +187,7 @@ async def google_callback(request: Request, code: str | None = None, state: str 
         with SessionLocal() as db:
             user = db.scalar(select(User).where(User.google_sub == claims["sub"]))
             if user is None:
-                user = User(id=str(uuid.uuid4()), google_sub=claims["sub"], email=claims["email"], name=claims.get("name", ""), picture=claims.get("picture"), credits=settings.FREE_INITIAL_CREDITS, created_at=now, last_login_at=now)
+                user = User(id=str(uuid.uuid4()), google_sub=claims["sub"], email=claims["email"], name=claims.get("name", ""), picture=claims.get("picture"), credits=INITIAL_USER_CREDITS, created_at=now, last_login_at=now)
                 db.add(user)
             else:
                 user.email = claims["email"]

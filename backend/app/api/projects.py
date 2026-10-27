@@ -4,16 +4,17 @@ import shutil
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.settings import settings
 from app.db import SessionLocal
-from app.models import Cue, Project, User
+from app.models import Cue, ExportFeedback, Project, User
 from app.api.auth import get_current_user, owned_project
 from app.services.media import get_media_duration
 from app.services import export as export_service
@@ -46,6 +47,15 @@ class ExportRequest(BaseModel):
     style: dict[str, Any] | None = None
     captionStyle: dict[str, Any] | None = None
     timingOffset: float | None = None
+
+
+class ExportFeedbackRequest(BaseModel):
+    export_job_id: str = Field(min_length=1, max_length=36)
+    kind: Literal["video", "greenscreen"]
+    liked: bool
+    rating: int = Field(ge=1, le=5)
+    issue_area: Literal["timing", "caption_text", "appearance", "audio_video", "download", "other"] | None = None
+    comment: str = Field(default="", max_length=2000)
 
 
 def project_media_path(project_id: str) -> Path | None:
@@ -166,6 +176,33 @@ def start_project_export(project_id: str, kind: str, payload: ExportRequest | No
     job_id, existing = start_job(project_id, kind, source, cue_data, style, float(offset or 0))
     job = get_job(job_id) or {}
     return {"job_id": job_id, "status": job.get("status", "queued"), "step": job.get("step", "Queued"), "percent": job.get("percent", 0), "indeterminate": job.get("indeterminate", False), "existing": existing}
+
+
+@router.post("/projects/{project_id}/export-feedback")
+def submit_export_feedback(project_id: str, payload: ExportFeedbackRequest, user: User = Depends(get_current_user)):
+    with SessionLocal() as db:
+        owned_project(db, project_id, user)
+        job = export_service.get_job(payload.export_job_id)
+        if not job or job.get("project_id") != project_id or job.get("kind") != payload.kind or job.get("status") != "done":
+            raise HTTPException(status_code=409, detail="Feedback is available after this export finishes.")
+        if db.scalar(select(ExportFeedback).where(ExportFeedback.export_job_id == payload.export_job_id)):
+            raise HTTPException(status_code=409, detail="Feedback has already been sent for this export.")
+        db.add(ExportFeedback(
+            export_job_id=payload.export_job_id,
+            project_id=project_id,
+            user_id=user.id,
+            export_kind=payload.kind,
+            liked=payload.liked,
+            rating=payload.rating,
+            issue_area=payload.issue_area,
+            comment=payload.comment.strip(),
+        ))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Feedback has already been sent for this export.")
+    return {"saved": True}
 
 
 @router.get("/jobs/{job_id}")

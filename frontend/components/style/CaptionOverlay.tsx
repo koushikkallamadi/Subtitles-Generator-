@@ -7,8 +7,14 @@ import CaptionRenderer from './CaptionRenderer';
 type Bounds = { left: number; top: number; width: number; height: number };
 function frameBounds(video: HTMLVideoElement | null): Bounds | null {
   const parent = video?.parentElement;
-  if (!video || !parent || !video.videoWidth || !video.videoHeight) return null;
-  const outer = parent.getBoundingClientRect(), ratio = video.videoWidth / video.videoHeight;
+  if (!video || !parent) return null;
+  const outer = parent.getBoundingClientRect();
+  // Audio-only uploads have no intrinsic video dimensions, but still need a
+  // visible caption canvas inside the preview area.
+  if (!video.videoWidth || !video.videoHeight) {
+    return { left: 0, top: 0, width: outer.width, height: outer.height };
+  }
+  const ratio = video.videoWidth / video.videoHeight;
   const width = Math.min(outer.width, outer.height * ratio), height = width / ratio;
   return { left: (outer.width - width) / 2, top: (outer.height - height) / 2, width, height };
 }

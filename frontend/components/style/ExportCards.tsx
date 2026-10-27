@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Clock3, Download, FileText, Film, LoaderCircle, Star } from 'lucide-react';
+import { CheckCircle2, Clock3, Download, FileText, Film, LoaderCircle, Send, Star, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { useVideoStore } from '../../store/videoStore';
 import { SectionHeading } from './PresetGrid';
-import { backendUrl, cancelExportJob, fetchExportJob, startProjectExport, type ExportJob } from '../../lib/projects';
+import { backendUrl, cancelExportJob, fetchExportJob, startProjectExport, submitExportFeedback, type ExportJob, type ExportFeedback } from '../../lib/projects';
 import { breakCaptionLines } from '../../lib/captionLines';
 import { scaleToFontPixels } from '../../lib/captionStyle';
 
@@ -24,17 +24,13 @@ function download(format: 'srt' | 'vtt') {
 }
 
 export default function ExportCards() {
-  const projectKey = useVideoStore((state) => state.projectId || state.projectName || 'default');
   const projectId = useVideoStore((state) => state.projectId);
   const captionStyle = useVideoStore((state) => state.captionStyle);
   const timingOffset = useVideoStore((state) => state.timingOffset);
   const [exportJobs, setExportJobs] = useState<Record<string, ExportJob | null>>({});
   const [exportErrors, setExportErrors] = useState<Record<string, string>>({});
   const [startedAt, setStartedAt] = useState<Record<string, number>>({});
-  const [rating, setRating] = useState(0);
-  useEffect(() => { setRating(Number(localStorage.getItem(`captionkit-rating-${projectKey}`) || 0)); }, [projectKey]);
   useEffect(() => { setExportJobs({}); setExportErrors({}); setStartedAt({}); }, [projectId]);
-  const saveRating = (value: number) => { setRating(value); localStorage.setItem(`captionkit-rating-${projectKey}`, String(value)); };
   const running = Object.values(exportJobs).some((job) => job && (job.status === 'queued' || job.status === 'running'));
   useEffect(() => {
     const active = Object.entries(exportJobs).filter(([, job]) => job?.job_id && (job.status === 'queued' || job.status === 'running')) as [string, ExportJob][];
@@ -94,11 +90,6 @@ export default function ExportCards() {
       <ExportCard kind="greenscreen" icon={<Film size={19} />} title="Green-screen layer (.mp4)" badge="Fast" description="Captions on solid green. Import it into Premiere, Resolve, Final Cut, or CapCut and remove the green with chroma key." job={exportJobs.greenscreen} error={exportErrors.greenscreen} busy={running} startedAt={startedAt.greenscreen} onStart={runExport} onCancel={stopExport} projectId={projectId} />
       <ExportCard kind="video" icon={<Film size={19} />} title="Export complete video" badge="Slow" description="Captions are burned into your uploaded video so it is ready to share." job={exportJobs.video} error={exportErrors.video} busy={running} startedAt={startedAt.video} onStart={runExport} onCancel={stopExport} projectId={projectId} />
     </div>
-    <div className="rounded-2xl border border-gray-700/70 bg-[#191c22] px-4 py-4 text-center">
-      <h3 className="text-sm font-semibold">How were your subtitles?</h3><p className="mt-1 text-xs text-gray-500">A quick tap helps us improve.</p>
-      <div className="mt-3 flex justify-center gap-2">{[1, 2, 3, 4, 5].map((star) => <button key={star} type="button" onClick={() => saveRating(star)} aria-label={`${star} star${star > 1 ? 's' : ''}`} aria-pressed={rating === star} className="rounded p-1 text-gray-500 transition hover:scale-110 hover:text-amber-300"><Star size={24} fill={rating >= star ? 'currentColor' : 'none'} className={rating >= star ? 'text-amber-300' : ''} /></button>)}</div>
-      {rating > 0 && <p className="mt-2 text-xs text-gray-400">Thanks for your feedback.</p>}
-    </div>
   </section>;
 }
 
@@ -108,5 +99,68 @@ function ExportCard({ icon, title, badge, description, kind, job, error, busy, s
   const preparingFonts = Boolean(job && (job.status === 'queued' || job.status === 'running') && elapsed >= 60_000 && (job.percent === 0 || job.percent === null));
   return <article className="rounded-2xl border border-gray-700/80 bg-[#202329] p-3.5"><div className="flex items-start gap-3"><span className="mt-0.5 shrink-0 text-gray-300">{icon}</span><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold">{title}</h3><span className="shrink-0 rounded-full border border-gray-600 px-2.5 py-1 text-[10px] text-gray-300">{badge}</span></div><p className="mt-1 text-xs leading-relaxed text-gray-400">{description}</p>
     {job && (job.status === 'queued' || job.status === 'running') ? <div className="mt-3"><div className="flex items-center gap-1.5 text-[11px] text-gray-300"><LoaderCircle size={13} className="animate-spin" />{job.step}<span className="ml-auto tabular-nums">{job.indeterminate || job.percent === null ? 'Progress unavailable' : `${job.percent}%`}</span><button type="button" onClick={() => onCancel(kind, job.job_id)} className="ml-2 rounded-md border border-gray-600 px-2 py-1 text-[10px] text-gray-300 hover:border-red-400 hover:text-red-200">Cancel</button></div>{job.indeterminate || job.percent === null ? <p className="mt-2 text-[11px] text-gray-500">The source duration is unknown, so progress cannot be estimated.</p> : <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-700"><div className="h-full rounded-full bg-[#dc735c] transition-all" style={{ width: `${Math.max(0, Math.min(100, job.percent || 0))}%` }} /></div>}{preparingFonts && <p className="mt-2 text-[11px] text-amber-200">Preparing fonts, first export can take longer.</p>}</div> : finished ? <a href={`${backendUrl}/projects/${encodeURIComponent(projectId || '')}/export/${kind}/download`} className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#dc735c] px-3 py-1.5 text-xs font-semibold text-[#241916] hover:bg-[#e88770]"><Download size={14} />Download .MP4</a> : <button type="button" disabled={busy} onClick={() => onStart(kind)} className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-gray-600 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:border-[#dc735c] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"><Clock3 size={13} />{job?.status === 'error' ? 'Try again' : 'Export .MP4'}</button>}
-    {(error || job?.error) && <p role="alert" className="mt-2 text-xs text-red-300">{error || job?.error}</p>}</div></div></article>;
+    {(error || job?.error) && <p role="alert" className="mt-2 text-xs text-red-300">{error || job?.error}</p>}
+    {finished && job?.job_id && projectId && <ExportFeedbackForm key={job.job_id} projectId={projectId} jobId={job.job_id} kind={kind} />}
+  </div></div></article>;
+}
+
+function ExportFeedbackForm({ projectId, jobId, kind }: { projectId: string; jobId: string; kind: 'video' | 'greenscreen' }) {
+  const [liked, setLiked] = useState<boolean | null>(null);
+  const [rating, setRating] = useState(0);
+  const [issueArea, setIssueArea] = useState<NonNullable<ExportFeedback['issue_area']> | ''>('');
+  const [comment, setComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState('');
+  const needsDetails = liked === false;
+  const canSubmit = liked !== null && rating > 0 && (!needsDetails || (Boolean(issueArea) && Boolean(comment.trim())));
+
+  const submit = async () => {
+    if (!canSubmit || submitting) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      await submitExportFeedback(projectId, {
+        export_job_id: jobId,
+        kind,
+        liked: liked!,
+        rating,
+        ...(issueArea ? { issue_area: issueArea } : {}),
+        comment: comment.trim(),
+      });
+      setSubmitted(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not send feedback. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return <div className="mt-4 rounded-xl border border-gray-700/80 bg-[#191c22] p-3.5">
+    {submitted ? <p role="status" className="flex items-center gap-2 text-sm font-medium text-emerald-300"><CheckCircle2 size={17} />Thanks. Your feedback was saved for this export.</p> : <>
+      <h4 className="text-sm font-semibold text-gray-100">How did this export go?</h4>
+      <p className="mt-1 text-xs leading-relaxed text-gray-400">Your feedback helps us improve caption quality and export reliability.</p>
+      <fieldset className="mt-3">
+        <legend className="text-xs font-medium text-gray-300">Did you like the result?</legend>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button type="button" onClick={() => setLiked(true)} aria-pressed={liked === true} className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs transition ${liked === true ? 'border-emerald-400/70 bg-emerald-400/10 text-emerald-200' : 'border-gray-700 text-gray-300 hover:border-gray-500'}`}><ThumbsUp size={14} />Yes, looks good</button>
+          <button type="button" onClick={() => setLiked(false)} aria-pressed={liked === false} className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs transition ${liked === false ? 'border-amber-400/70 bg-amber-400/10 text-amber-100' : 'border-gray-700 text-gray-300 hover:border-gray-500'}`}><ThumbsDown size={14} />Needs work</button>
+        </div>
+      </fieldset>
+      <fieldset className="mt-3">
+        <legend className="text-xs font-medium text-gray-300">Rate this export</legend>
+        <div className="mt-1.5 flex gap-1">{[1, 2, 3, 4, 5].map((star) => <button key={star} type="button" onClick={() => setRating(star)} aria-label={`${star} star${star === 1 ? '' : 's'}`} aria-pressed={rating === star} className="rounded p-1 text-gray-500 transition hover:text-amber-300"><Star size={21} fill={rating >= star ? 'currentColor' : 'none'} className={rating >= star ? 'text-amber-300' : ''} /></button>)}</div>
+      </fieldset>
+      {needsDetails && <label className="mt-3 block text-xs font-medium text-gray-300">What needs attention?
+        <select value={issueArea} onChange={(event) => setIssueArea(event.target.value as typeof issueArea)} className="mt-1.5 w-full rounded-lg border border-gray-700 bg-[#22252b] px-2.5 py-2 text-xs text-gray-200 outline-none focus:border-gray-500">
+          <option value="">Choose an area</option><option value="timing">Caption timing</option><option value="caption_text">Caption text</option><option value="appearance">Caption appearance</option><option value="audio_video">Audio or video quality</option><option value="download">Export or download</option><option value="other">Something else</option>
+        </select>
+      </label>}
+      <label className="mt-3 block text-xs font-medium text-gray-300">{needsDetails ? 'What went wrong?' : 'Any suggestions?'}{needsDetails && <span className="ml-1 text-amber-300">Required</span>}
+        <textarea value={comment} onChange={(event) => setComment(event.target.value)} maxLength={2000} rows={3} placeholder={needsDetails ? 'Describe the problem so we can investigate it.' : 'Tell us what worked well or what would make this better.'} className="mt-1.5 w-full resize-y rounded-lg border border-gray-700 bg-[#22252b] px-2.5 py-2 text-xs leading-relaxed text-gray-200 outline-none placeholder:text-gray-500 focus:border-gray-500" />
+      </label>
+      <div className="mt-2 flex items-center justify-between gap-2"><span className="text-[10px] text-gray-500">{comment.length}/2000</span><button type="button" disabled={!canSubmit || submitting} onClick={() => void submit()} className="inline-flex items-center gap-1.5 rounded-lg bg-[#dc735c] px-3 py-2 text-xs font-semibold text-[#241916] transition hover:bg-[#e88770] disabled:cursor-not-allowed disabled:opacity-40">{submitting ? 'Sending…' : 'Send feedback'}<Send size={13} /></button></div>
+      {error && <p role="alert" className="mt-2 text-xs text-red-300">{error}</p>}
+    </>}
+  </div>;
 }

@@ -48,6 +48,10 @@ export function saveProjectCues(id: string, cues: ApiCue[]) {
 export function startProjectExport(id: string, kind: 'video' | 'greenscreen', style: unknown, timingOffset: number) {
   return apiRequest<ExportJob>(`/projects/${encodeURIComponent(id)}/export/${kind}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ style, timingOffset }) });
 }
+export type ExportFeedback = { export_job_id: string; kind: 'video' | 'greenscreen'; liked: boolean; rating: number; issue_area?: 'timing' | 'caption_text' | 'appearance' | 'audio_video' | 'download' | 'other'; comment: string };
+export function submitExportFeedback(projectId: string, feedback: ExportFeedback) {
+  return apiRequest<{ saved: boolean }>(`/projects/${encodeURIComponent(projectId)}/export-feedback`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(feedback) });
+}
 export function fetchExportJob(id: string) {
   type ExportJobResponse = Omit<ExportJob, 'job_id'> & { job_id?: string };
   return apiRequest<ExportJobResponse>(`/jobs/${encodeURIComponent(id)}`).then((job) => ({

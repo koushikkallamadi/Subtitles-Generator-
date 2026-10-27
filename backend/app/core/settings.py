@@ -2,6 +2,8 @@ import os
 from pydantic_settings import BaseSettings
 from pydantic import Field, validator
 
+INITIAL_USER_CREDITS = 20.0
+
 class Settings(BaseSettings):
     # Core
     SECRET_KEY: str = Field(default="dev-secret-key", env="SECRET_KEY")
@@ -29,7 +31,6 @@ class Settings(BaseSettings):
 
     # Credits
     FREE_MAX_SECONDS: int = Field(default=240, env="FREE_MAX_SECONDS")
-    FREE_INITIAL_CREDITS: float = Field(default=5.0, env="FREE_INITIAL_CREDITS")
     CREDIT_COST_PER_MINUTE: float = Field(default=1.0, env="CREDIT_COST_PER_MINUTE")
     TRANSLATION_COST_PER_MINUTE: float = Field(default=0.5, env="TRANSLATION_COST_PER_MINUTE")
     TIMING_STRATEGY: str = Field(default="hybrid", env="TIMING_STRATEGY")
@@ -53,11 +54,6 @@ class Settings(BaseSettings):
         if normalized not in {"hybrid", "estimate", "forced"}:
             raise ValueError("TIMING_STRATEGY must be 'hybrid', 'estimate', or 'forced'")
         return normalized
-
-    @validator("FREE_INITIAL_CREDITS")
-    def cap_initial_credits(cls, value):
-        # Keep legacy .env values from granting more than the current 5-credit trial.
-        return min(max(float(value), 0.0), 5.0)
 
     @validator("SARVAM_API_KEY", pre=True)
     def fallback_sarvam_key(cls, v):
