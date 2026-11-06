@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str = Field(default="sqlite:///./captionkit.db", env="DATABASE_URL")
     MEDIA_RETENTION_DAYS: int = Field(default=7, env="MEDIA_RETENTION_DAYS")
     FFMPEG_PATH: str = Field(default="ffmpeg", env="FFMPEG_PATH")
+    # Accept existing FREE_INITIAL_CREDITS environment values for compatibility.
+    # New accounts use INITIAL_USER_CREDITS so the grant remains fixed at 20.
+    FREE_INITIAL_CREDITS: float = Field(default=20.0, env="FREE_INITIAL_CREDITS")
 
     # Transcription
     TRANSCRIPTION_PROVIDER: str = Field(default="sarvam", env="TRANSCRIPTION_PROVIDER")
