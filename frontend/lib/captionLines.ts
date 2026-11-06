@@ -5,13 +5,13 @@
 export function breakCaptionLines(
   input: string[] | string,
   boxWidth: number,
-  maxWordsPerLine = 4,
+  maxWordsPerLine = 2,
   maxLines = 2,
 ): string[][] {
   const words = (Array.isArray(input) ? input : input.split(/\s+/)).map((word) => word.trim()).filter(Boolean);
   if (!words.length) return [];
   const width = Math.max(1, Number.isFinite(boxWidth) ? boxWidth : 1);
-  const wordLimit = Math.max(1, Math.floor(Number.isFinite(maxWordsPerLine) ? maxWordsPerLine : 4));
+  const wordLimit = Math.max(1, Math.floor(Number.isFinite(maxWordsPerLine) ? maxWordsPerLine : 2));
   const lineLimit = Math.max(1, Math.floor(Number.isFinite(maxLines) ? maxLines : 2));
   const measure = (line: string[]) => line.reduce((sum, word) => sum + Math.max(0.55, Array.from(word).length * 0.55), 0) + Math.max(0, line.length - 1) * 0.3;
   const visibleLength = (word: string) => Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(word.replace(/[.,!?;:'"()[\]{}…।॥\-_]/g, ''))).length;

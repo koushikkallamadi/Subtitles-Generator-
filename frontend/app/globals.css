@@ -227,5 +227,7 @@ html {
 .editor-theme .transcript-theme [class*="bg-[#dc735c]/15"] { background-color: var(--accent-soft) !important; color: var(--accent-strong) !important; }
 .editor-theme .transcript-theme .transcript-tab-active,
 .editor-theme .transcript-theme .browse-styles-button,
-.editor-theme .transcript-theme .fine-tune-selected[aria-pressed="true"] { color: #fff !important; }
+.editor-theme .transcript-theme .fine-tune-selected[aria-pressed="true"],
+.editor-theme .transcript-theme .preset-selected-badge { color: #fff !important; }
+.editor-theme .transcript-theme .cue-active-button { color: #fff !important; }
 

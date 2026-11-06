@@ -67,7 +67,7 @@ function segment(words: WordTimestamp[], maxWords: number, lines: number): Cue[]
 
 export const useVideoStore = create<VideoState>()(persist((set) => ({
   videoUrl: null, cues: [], projectName: '', fileSize: 0, duration: 0, language: 'Hindi', projectId: null, savingState: 'saved',
-  style: 'roman', timingOffset: 0, captionStyle: DEFAULT_CAPTION_STYLE, selectedCaptionPreset: 'Highlight', maxWordsPerLine: 4, maxLinesPerSubtitle: 2, originalCues: [], selectedCueIndex: null, undoCueHistory: [], redoCueHistory: [],
+  style: 'roman', timingOffset: 0, captionStyle: DEFAULT_CAPTION_STYLE, selectedCaptionPreset: 'Highlight', maxWordsPerLine: 2, maxLinesPerSubtitle: 2, originalCues: [], selectedCueIndex: null, undoCueHistory: [], redoCueHistory: [],
   setVideoData: (url, name, size, dur) => set({ videoUrl: url, projectName: name, fileSize: size, duration: dur, cues: [], originalCues: [], projectId: null, savingState: 'saved' }),
   setProjectId: (projectId) => set({ projectId }), setSavingState: (savingState) => set({ savingState }),
   setCues: (items) => set((state) => {
@@ -106,7 +106,7 @@ export const useVideoStore = create<VideoState>()(persist((set) => ({
   setSelectedCue: (selectedCueIndex) => set({ selectedCueIndex }),
   setMaxWordsPerLine: (maxWordsPerLine) => set({ maxWordsPerLine }), setMaxLinesPerSubtitle: (maxLinesPerSubtitle) => set({ maxLinesPerSubtitle }),
   setOriginalCues: (originalCues) => set({ originalCues }),
-  resetCues: () => set((state) => ({ cues: state.originalCues.map((cue) => ({ ...cue, words: cue.words?.map((word) => ({ ...word })), manuallyEdited: false })), selectedCueIndex: null, maxWordsPerLine: 4, maxLinesPerSubtitle: 2, timingOffset: 0 })),
+  resetCues: () => set((state) => ({ cues: state.originalCues.map((cue) => ({ ...cue, words: cue.words?.map((word) => ({ ...word })), manuallyEdited: false })), selectedCueIndex: null, maxWordsPerLine: 2, maxLinesPerSubtitle: 2, timingOffset: 0 })),
   updateCue: (index, patch) => set((state) => ({ cues: state.cues.map((cue, i) => {
     if (i !== index) return cue;
     const updated = { ...cue, ...patch, manuallyEdited: true };

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { SlidersHorizontal, X } from 'lucide-react';
+import { Check, SlidersHorizontal, X } from 'lucide-react';
 import type { CaptionStyle } from '../../lib/captionStyle';
 import { CAPTION_PRESETS } from '../../lib/captionPresets';
 import type { CaptionPreset } from '../../lib/captionPresets';
@@ -8,18 +8,26 @@ import CaptionRenderer from './CaptionRenderer';
 function Sample({ preset }: { preset: CaptionPreset }) {
   const sampleWords = preset.sample.split(/\s+/).map((text, index) => ({ text, start: index * .3, end: (index + 1) * .3 }));
   const sampleStyle = preset.style;
-  return <div className="flex h-20 items-center justify-center overflow-hidden rounded-xl bg-[radial-gradient(ellipse_at_center,#30333d_0%,#14161b_78%)] px-2" style={{ containerType: 'inline-size' }}>
-    <CaptionRenderer style={sampleStyle} text={preset.sample} words={sampleWords} activeWordIndex={0} containerSize={{ width: 260, height: 320 }} />
+  return <div className="flex h-24 items-center justify-center overflow-hidden rounded-xl bg-[radial-gradient(ellipse_at_50%_42%,#383B45_0%,#17191F_74%)] px-2.5" style={{ containerType: 'inline-size' }}>
+    <CaptionRenderer style={sampleStyle} text={preset.sample} words={sampleWords} activeWordIndex={0} revealedWordIndex={sampleWords.length - 1} containerSize={{ width: 260, height: 320 }} />
   </div>;
 }
 
 export default function PresetGrid({ selected, onSelect }: { selected: string; onSelect: (preset: CaptionStyle) => void }) {
   const [open, setOpen] = useState(false);
-  const renderCard = (preset: CaptionPreset) => <button type="button" key={preset.name} onClick={() => { onSelect(preset.style); setOpen(false); }} aria-pressed={selected === preset.name} className={`group rounded-[20px] border p-2 text-left transition hover:border-[#dc735c]/70 ${selected === preset.name ? 'border-[#dc735c] shadow-[0_0_0_1px_rgba(220,115,92,.2)]' : 'border-gray-700/70 bg-[#17191f]'}`}>
-    <Sample preset={preset} />
-    <div className="mt-2 flex items-center justify-between px-1"><div><div className="text-xs font-semibold text-gray-200">{preset.name}</div><div className="mt-0.5 text-[10px] text-gray-500">{preset.description}</div></div>{preset.name === 'Custom' && <SlidersHorizontal size={14} className="text-gray-400" />}</div>
-  </button>;
-
+  const renderCard = (preset: CaptionPreset) => {
+    const isSelected = selected === preset.name;
+    return <button type="button" key={preset.name} onClick={() => { onSelect(preset.style); setOpen(false); }} aria-pressed={isSelected} className={`group flex h-[166px] min-w-0 flex-col rounded-2xl border-2 p-2.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D65A26] ${isSelected ? 'border-[#D65A26] bg-[#FFF3EA] shadow-[0_5px_18px_rgba(214,90,38,.16)]' : 'border-[#E6E1DB] bg-white hover:border-[#D65A26] hover:bg-[#FFFCFA]'}`}>
+      <div className="relative w-full">
+        <Sample preset={preset} />
+        {isSelected && <span className="preset-selected-badge absolute right-2 top-[-8px] z-10 inline-flex items-center gap-1 rounded-full bg-[#D65A26] px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm"><Check size={11} strokeWidth={3} />Selected</span>}
+      </div>
+      <div className="mt-2 flex min-h-10 w-full items-start justify-between gap-1 px-1">
+        <div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold leading-4 text-gray-200" title={preset.name}>{preset.name}</div><div className="mt-0.5 truncate text-[10px] leading-3 text-gray-500" title={preset.description}>{preset.description}</div></div>
+        {preset.name === 'Custom' && <SlidersHorizontal size={14} className="shrink-0 text-gray-400" />}
+      </div>
+    </button>;
+  };
   return <section className="space-y-3">
     <SectionHeading eyebrow="1. CHOOSE A LOOK" title="Style presets" />
     <div className="grid grid-cols-2 gap-2.5">{CAPTION_PRESETS.slice(0, 8).map(renderCard)}</div>

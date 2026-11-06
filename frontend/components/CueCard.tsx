@@ -81,15 +81,15 @@ export default function CueCard({ cue, index, current = false }: { cue: Cue; ind
     result[lineIndex] = result[lineIndex] ? `${result[lineIndex]} ${word}` : word;
     return result;
   }, [] as string[]).join('\n');
-  return <article data-cue-index={index} onClick={clickCard} className={`relative rounded-2xl border bg-[#191c22] p-3 transition-colors ${invalidLimits ? 'border-l-2 border-l-amber-400 border-gray-700' : selected ? 'border-[#dc735c]' : 'border-gray-700/80'} ${selected ? 'shadow-[0_0_0_1px_rgba(220,115,92,.13)]' : ''}`}>
+  return <article data-cue-index={index} onClick={clickCard} className={`relative rounded-2xl border border-[#F2C7AE] bg-[#FFF8F3] p-3 shadow-[0_4px_18px_rgba(214,90,38,.07)] transition-all hover:border-[#E6A17D] ${invalidLimits ? 'border-l-4 border-l-amber-400' : selected ? 'border-l-4 border-l-[#D65A26] border-[#D65A26] bg-[#FFF0E5] shadow-[0_6px_22px_rgba(214,90,38,.14)]' : ''}`}>
     <header className="mb-3 flex items-center justify-between gap-2">
       <div className="flex items-center gap-1.5">{invalidLimits && <AlertTriangle size={14} className="text-amber-400" />}
-        <button onClick={() => { store.setSelectedCue(index); const video = document.querySelector('video'); if (video) { video.currentTime = Math.max(0, cue.start + store.timingOffset); video.dispatchEvent(new Event('timeupdate')); } }} className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${selected ? 'bg-[#dc735c] text-[#201613]' : 'bg-[#22252c] text-gray-300'}`}><Play size={12} fill="currentColor" /> Cue {index + 1}</button>
+        <button onClick={() => { store.setSelectedCue(index); const video = document.querySelector('video'); if (video) { video.currentTime = Math.max(0, cue.start + store.timingOffset); video.dispatchEvent(new Event('timeupdate')); } }} className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${selected ? 'cue-active-button bg-[#D65A26] text-white' : 'bg-[#FDEBDD] text-[#B8501F]'}`}><Play size={12} fill="currentColor" /> Cue {index + 1}</button>
       </div>
       <div className="flex items-center gap-2 text-xs text-gray-400">
         {cue.timing_quality === 'estimated' && <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-medium text-amber-300">timing estimated</span>}
         <button onClick={() => store.setLinked(index, !cue.linked)} className="flex items-center gap-1 hover:text-white" title="Toggle linked">{cue.linked ? <Link2 size={14} /> : <Unlink2 size={14} />}<span>{cue.linked ? 'Linked' : 'Unlinked'}</span></button>
-        <span className="flex items-center gap-1 rounded-full bg-[#23262d] px-2 py-1"><Clock3 size={13} />{Math.max(0, cue.end - cue.start).toFixed(1)}s</span>
+        <span className="flex items-center gap-1 rounded-full bg-[#FDEBDD] px-2 py-1 text-[#B8501F]"><Clock3 size={13} />{Math.max(0, cue.end - cue.start).toFixed(1)}s</span>
         <div className="relative"><button aria-label="Cue actions" onClick={() => setMenuOpen(!menuOpen)} className="rounded p-1 hover:bg-white/10"><MoreHorizontal size={17} /></button>
           {menuOpen && <div className="absolute right-0 top-7 z-20 min-w-36 rounded-lg border border-gray-700 bg-[#22252c] p-1 shadow-xl">
             <button className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-white/10" onClick={() => { store.deleteCue(index); setMenuOpen(false); }}>Delete</button>
@@ -99,9 +99,9 @@ export default function CueCard({ cue, index, current = false }: { cue: Cue; ind
           </div>}</div>
       </div>
     </header>
-    <div className="mb-1 grid grid-cols-2 gap-2 rounded-xl border border-gray-700/70 bg-[#1b1e24] p-2">
-      <label className="text-[10px] font-semibold tracking-wide text-gray-400">START<input aria-label="Start time" value={start} onChange={(e) => setStart(e.target.value)} onBlur={commitTiming} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitTiming(); e.currentTarget.blur(); } }} className="mt-1 block w-full rounded-full bg-[#26292f] px-2 py-2 font-mono text-xs text-gray-100 outline-none focus:ring-1 focus:ring-[#dc735c]" /></label>
-      <label className="text-[10px] font-semibold tracking-wide text-gray-400">END<input aria-label="End time" value={end} onChange={(e) => setEnd(e.target.value)} onBlur={commitTiming} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitTiming(); e.currentTarget.blur(); } }} className="mt-1 block w-full rounded-full bg-[#26292f] px-2 py-2 font-mono text-xs text-gray-100 outline-none focus:ring-1 focus:ring-[#dc735c]" /></label>
+    <div className="mb-1 grid grid-cols-2 gap-2 rounded-xl border border-[#F2C7AE] bg-[#FFFDFB] p-2">
+      <label className="text-[10px] font-semibold tracking-wide text-[#8C5B43]">START<input aria-label="Start time" value={start} onChange={(e) => setStart(e.target.value)} onBlur={commitTiming} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitTiming(); e.currentTarget.blur(); } }} className="mt-1 block w-full rounded-lg border border-[#F2C7AE] bg-white px-2 py-2 font-mono text-xs text-gray-900 outline-none focus:border-[#D65A26] focus:ring-1 focus:ring-[#D65A26]" /></label>
+      <label className="text-[10px] font-semibold tracking-wide text-[#8C5B43]">END<input aria-label="End time" value={end} onChange={(e) => setEnd(e.target.value)} onBlur={commitTiming} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitTiming(); e.currentTarget.blur(); } }} className="mt-1 block w-full rounded-lg border border-[#F2C7AE] bg-white px-2 py-2 font-mono text-xs text-gray-900 outline-none focus:border-[#D65A26] focus:ring-1 focus:ring-[#D65A26]" /></label>
     </div>
     {selected && <div className="mb-2 flex flex-wrap items-center gap-1.5">
       <button type="button" onClick={() => setEdgeToPlayhead('start')} className="rounded-md border border-gray-700 px-2 py-1 text-[10px] text-gray-300 hover:border-gray-500">Set start to playhead</button>
@@ -113,7 +113,7 @@ export default function CueCard({ cue, index, current = false }: { cue: Cue; ind
       <button type="button" onClick={() => applyTiming(shiftCuesAfter(store.cues, index, Number(shiftAmount), store.duration || document.querySelector('video')?.duration || cue.end))} className="rounded-md border border-gray-700 px-2 py-1 text-gray-300 hover:border-gray-500">Apply</button>
     </div>}
     {timeError && <p role="alert" className="mb-2 px-1 text-xs text-red-400">{timeError}</p>}
-    <textarea ref={textarea} value={text} onChange={(e) => { setText(e.target.value); store.updateCue(index, { text: e.target.value }); }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.blur(); } }} onFocus={(e) => { if (e.currentTarget.value === cue.text) setText(linesText); }} rows={Math.max(2, Math.min(4, lines.length || 2))} className="w-full resize-y rounded-xl border border-gray-700/70 bg-[#22252b] px-3 py-2 text-sm leading-6 text-gray-100 outline-none focus:border-gray-500" />
+    <textarea ref={textarea} value={text} onChange={(e) => { setText(e.target.value); store.updateCue(index, { text: e.target.value }); }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.blur(); } }} onFocus={(e) => { if (e.currentTarget.value === cue.text) setText(linesText); }} rows={Math.max(2, Math.min(4, lines.length || 2))} className="w-full resize-y rounded-xl border border-[#F2C7AE] bg-white px-3 py-2 text-sm leading-6 text-gray-900 outline-none focus:border-[#D65A26] focus:ring-1 focus:ring-[#D65A26]" />
     <footer className="mt-2 flex items-center justify-between text-xs"><span className={lines.length > store.maxLinesPerSubtitle ? 'text-amber-300' : 'text-gray-400'}>{lines.length} / {store.maxLinesPerSubtitle} lines</span><span className={wordCount > store.maxWordsPerLine ? 'text-amber-300' : 'text-gray-400'}>{wordCount} / {store.maxWordsPerLine} words</span></footer>
   </article>;
 }

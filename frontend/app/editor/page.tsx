@@ -61,7 +61,7 @@ function EditorContent() {
         language: project.language, style: project.style, cues: mappedCues, originalCues: mappedCues.map((cue) => ({ ...cue, words: cue.words?.map((word) => ({ ...word })) })),
         captionStyle: validateCaptionStyle(settings.captionStyle || DEFAULT_CAPTION_STYLE),
         selectedCaptionPreset: detectCaptionPreset(validateCaptionStyle(settings.captionStyle || DEFAULT_CAPTION_STYLE)),
-        timingOffset: Math.max(-1, Math.min(1, Number(settings.timingOffset ?? 0))), maxWordsPerLine: Number(settings.maxWordsPerLine ?? 4), maxLinesPerSubtitle: Number(settings.maxLinesPerSubtitle ?? 2), savingState: "saved",
+        timingOffset: Math.max(-1, Math.min(1, Number(settings.timingOffset ?? 0))), maxWordsPerLine: Number(settings.maxWordsPerLine ?? 2), maxLinesPerSubtitle: Number(settings.maxLinesPerSubtitle ?? 2), savingState: "saved",
       });
       setDuration(project.duration || 0);
       setMediaMissing(!project.media_available);
