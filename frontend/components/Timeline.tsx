@@ -28,7 +28,6 @@ interface TimelineProps {
 }
 
 const BASE_PIXELS_PER_SECOND = 100;
-const audioNodes = new WeakMap<HTMLMediaElement, { context: AudioContext; analyser: AnalyserNode }>();
 
 const AudioWaveform = React.memo(function AudioWaveform({ levels, revision, width, height = 48 }: { levels: number[]; revision: number; width: number; height?: number }) {
   const bars = Math.max(1, levels.length);
@@ -73,61 +72,73 @@ export default function Timeline({
   useEffect(() => {
     const video = document.querySelector<HTMLVideoElement>("video");
     if (!video) return;
-    const bucketCount = Math.max(300, Math.min(6000, Math.ceil(timelineDuration * 20)));
-    levelsRef.current = Array(bucketCount).fill(0);
-    let interval = 0;
-    let lastBucket = -1;
-    let context: AudioContext | null = null;
-    let analyser: AnalyserNode | null = null;
-    let data: Uint8Array | null = null;
+    const sampleRate = 40;
+    const maxDurationSeconds = 4 * 60;
+    const maxCompressedBytes = 150 * 1024 * 1024;
+    let cancelled = false;
+    const controller = new AbortController();
+    levelsRef.current = [];
+    setWaveformRevision(0);
 
-    const sample = async () => {
+    const createWaveform = async () => {
+      const mediaUrl = video.currentSrc || video.src;
+      if (timelineDuration <= 0 || timelineDuration > maxDurationSeconds || !mediaUrl) return;
+      let context: AudioContext | null = null;
       try {
-        if (!context || !analyser || !data) {
-          const existing = audioNodes.get(video);
-          if (existing) ({ context, analyser } = existing);
-          else {
-            context = new AudioContext();
-            analyser = context.createAnalyser();
-            analyser.fftSize = 1024;
-            const source = context.createMediaElementSource(video);
-            source.connect(analyser);
-            analyser.connect(context.destination);
-            audioNodes.set(video, { context, analyser });
+        const response = await fetch(mediaUrl, { credentials: "include", signal: controller.signal });
+        if (!response.ok || !response.body) return;
+        const announcedSize = Number(response.headers.get("content-length") || 0);
+        if (announcedSize > maxCompressedBytes) return;
+
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let totalBytes = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!value) continue;
+          totalBytes += value.byteLength;
+          if (totalBytes > maxCompressedBytes) {
+            await reader.cancel();
+            return;
           }
-          data = new Uint8Array(analyser.fftSize);
+          chunks.push(value);
         }
-        if (context.state === "suspended") await context.resume();
-        analyser.getByteTimeDomainData(data);
-        let sumSquares = 0;
-        for (let index = 0; index < data.length; index += 1) {
-          const value = data[index];
-          const normalized = (value - 128) / 128;
-          sumSquares += normalized * normalized;
+        if (cancelled || !chunks.length) return;
+
+        const encoded = new Uint8Array(totalBytes);
+        let offset = 0;
+        for (const chunk of chunks) { encoded.set(chunk, offset); offset += chunk.byteLength; }
+        context = new AudioContext();
+        const audio = await context.decodeAudioData(encoded.buffer);
+        if (cancelled) return;
+
+        const bucketCount = Math.max(1, Math.min(8000, Math.ceil(audio.duration * sampleRate)));
+        const peaks = new Array<number>(bucketCount).fill(0);
+        const channels = Array.from({ length: audio.numberOfChannels }, (_, channel) => audio.getChannelData(channel));
+        for (let bucket = 0; bucket < bucketCount; bucket += 1) {
+          const from = Math.floor(bucket * audio.length / bucketCount);
+          const to = Math.max(from + 1, Math.floor((bucket + 1) * audio.length / bucketCount));
+          let peak = 0;
+          for (const samples of channels) {
+            for (let index = from; index < to; index += 1) peak = Math.max(peak, Math.abs(samples[index]));
+          }
+          peaks[bucket] = peak;
         }
-        const rms = Math.sqrt(sumSquares / data.length);
-        const bucket = Math.max(0, Math.min(bucketCount - 1, Math.floor(video.currentTime / Math.max(timelineDuration, 0.01) * bucketCount)));
-        levelsRef.current[bucket] = Math.max(levelsRef.current[bucket], Math.min(1, rms * 3.5));
-        if (bucket !== lastBucket) {
-          lastBucket = bucket;
-          setWaveformRevision((revision) => revision + 1);
-        }
+        const sortedPeaks = [...peaks].sort((a, b) => a - b);
+        const scale = sortedPeaks[Math.floor(sortedPeaks.length * 0.95)] || 1;
+        levelsRef.current = peaks.map((peak) => Math.min(1, peak / scale));
+        setWaveformRevision((revision) => revision + 1);
       } catch {
-        // Keep the track usable when audio analysis is blocked by browser policy.
+        // Leave the waveform empty when the browser cannot decode this media format.
+      } finally {
+        if (context && context.state !== "closed") void context.close();
       }
     };
-    const onPlaying = () => {
-      if (!interval) interval = window.setInterval(() => void sample(), 80);
-      void sample();
-    };
-    const onPaused = () => { window.clearInterval(interval); interval = 0; };
-    video.addEventListener("playing", onPlaying);
-    video.addEventListener("pause", onPaused);
-    if (!video.paused) onPlaying();
+    void createWaveform();
     return () => {
-      window.clearInterval(interval);
-      video.removeEventListener("playing", onPlaying);
-      video.removeEventListener("pause", onPaused);
+      cancelled = true;
+      controller.abort();
     };
   }, [timelineDuration]);
 

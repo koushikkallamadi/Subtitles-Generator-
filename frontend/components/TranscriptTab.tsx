@@ -6,7 +6,7 @@ import { useVideoStore } from '../store/videoStore';
 import StyleExportTab from './style/StyleExportTab';
 
 const languages = ['English', 'Hindi', 'Telugu', 'Tamil', 'Marathi', 'Urdu', 'Kannada', 'Bengali', 'Malayalam', 'Gujarati'];
-const headerClass = 'flex w-full items-center justify-between border-b border-[#dc735c]/25 bg-[#322421] px-3 py-3 text-left text-sm font-semibold text-[#dc735c]';
+const headerClass = 'flex w-full items-center justify-between border-b border-[#F2C7AE] border-l-4 border-l-[#D65A26] bg-[#FDEBDD] px-3 py-3 text-left text-sm font-semibold text-[#B8501F]';
 
 export default function TranscriptTab({ onRegenerate }: { onRegenerate?: () => void | Promise<void> }) {
   const store = useVideoStore();
@@ -51,14 +51,14 @@ export default function TranscriptTab({ onRegenerate }: { onRegenerate?: () => v
     catch (error) { setToast(error instanceof Error ? error.message : 'Could not regenerate captions.'); }
     finally { setRegenerating(false); }
   };
-  return <div className="flex min-h-0 flex-1 flex-col overflow-hidden text-white">
-    <div className="sticky top-0 z-20 grid shrink-0 grid-cols-2 border-b border-gray-700/80 bg-[#1a1e2b]">
-      <button onClick={() => setActiveTab('transcript')} className={`flex items-center justify-center gap-2 border-b-2 px-2 py-3 text-sm font-semibold ${activeTab === 'transcript' ? 'border-[#dc735c] text-[#dc735c]' : 'border-transparent text-gray-400 hover:text-white'}`}><List size={16} />Transcript</button>
-      <button onClick={() => setActiveTab('style')} className={`flex items-center justify-center gap-2 border-b-2 px-2 py-3 text-sm font-medium ${activeTab === 'style' ? 'border-[#dc735c] text-[#dc735c]' : 'border-transparent text-gray-400 hover:text-white'}`}><Captions size={16} />Style &amp; export</button>
+  return <div className="flex min-h-0 flex-1 flex-col overflow-hidden text-ink">
+    <div className="sticky top-0 z-20 grid shrink-0 grid-cols-2 border-b border-[#F2C7AE] bg-[#FFF8F3] p-1">
+      <button onClick={() => setActiveTab('transcript')} className={`transcript-tab flex items-center justify-center gap-2 rounded-lg px-2 py-3 text-sm font-semibold transition ${activeTab === 'transcript' ? 'transcript-tab-active bg-[#D65A26] text-white shadow-sm' : 'border border-transparent text-muted hover:border-[#F2C7AE] hover:bg-white'}`}><List size={16} />Transcript</button>
+      <button onClick={() => setActiveTab('style')} className={`transcript-tab flex items-center justify-center gap-2 rounded-lg px-2 py-3 text-sm font-semibold transition ${activeTab === 'style' ? 'transcript-tab-active bg-[#D65A26] text-white shadow-sm' : 'border border-transparent text-muted hover:border-[#F2C7AE] hover:bg-white'}`}><Captions size={16} />Style &amp; export</button>
     </div>
-    <div className="sticky top-[46px] z-20 flex shrink-0 items-center justify-end gap-2 border-b border-gray-800 bg-[#1a1e2b] px-3 py-2">
-      <button disabled={!changed} onClick={() => { store.resetCues(); initial.current = { cues: JSON.stringify(store.originalCues), offset: 0, maxWords: 4, maxLines: 2 }; }} className="flex items-center gap-1 rounded-lg bg-[#282a30] px-2.5 py-1.5 text-xs text-[#dc735c] hover:bg-[#343137] disabled:cursor-default disabled:opacity-35"><RotateCcw size={13} />Reset</button>
-      <button disabled={!onRegenerate || regenerating} onClick={() => void regenerate()} className="rounded-lg border border-gray-700 px-2.5 py-1.5 text-xs text-gray-300 hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50">{regenerating ? 'Regenerating…' : 'Regenerate'}</button>
+    <div className="sticky top-[46px] z-20 flex shrink-0 items-center justify-end gap-2 border-b border-[#E6E1DB] bg-white px-3 py-2">
+      <button disabled={!changed} onClick={() => { store.resetCues(); initial.current = { cues: JSON.stringify(store.originalCues), offset: 0, maxWords: 4, maxLines: 2 }; }} className="flex items-center gap-1 rounded-lg bg-[#FDEBDD] px-2.5 py-1.5 text-xs font-semibold text-[#B8501F] hover:bg-[#F8D9C5] disabled:cursor-default disabled:opacity-45"><RotateCcw size={13} />Reset</button>
+      <button disabled={!onRegenerate || regenerating} onClick={() => void regenerate()} className="rounded-full border border-[#D65A26] bg-white px-3.5 py-1.5 text-xs font-semibold text-[#B8501F] hover:bg-[#FDEBDD] disabled:cursor-not-allowed disabled:opacity-50">{regenerating ? 'Regenerating…' : 'Regenerate'}</button>
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto">
       {activeTab === 'style' ? <StyleExportTab /> : <>
@@ -69,7 +69,7 @@ export default function TranscriptTab({ onRegenerate }: { onRegenerate?: () => v
       <section>
         <button onClick={() => setShowCues(!showCues)} className={headerClass}><span>Cues ({cues.length})</span>{showCues ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
         {showCues && <>
-          <div className="border-b border-gray-800 px-3 py-3"><div className="relative"><Languages size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><select defaultValue="" onChange={(event) => { if (event.target.value) setToast('Translation coming soon'); event.target.value = ''; }} className="w-full appearance-none rounded-full border border-gray-700 bg-[#22252b] py-2.5 pl-9 pr-9 text-sm text-gray-300 outline-none focus:border-gray-500"><option value="">Translate to</option>{languages.map((language) => <option key={language}>{language}</option>)}</select><ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" /></div></div>
+          <div className="border-b border-[#E6E1DB] bg-[#FFFCFA] px-3 py-3"><div className="relative"><Languages size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#B8501F]" /><select defaultValue="" onChange={(event) => { if (event.target.value) setToast('Translation coming soon'); event.target.value = ''; }} className="w-full appearance-none rounded-full border border-[#E6C8B8] bg-white py-2.5 pl-9 pr-9 text-sm text-ink outline-none focus:border-[#D65A26]"><option value="">Translate to</option>{languages.map((language) => <option key={language}>{language}</option>)}</select><ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#B8501F]" /></div></div>
           <div ref={cueList} className="flex flex-col gap-3 p-3">{cues.map((cue, index) => <CueCard key={index} cue={cue} index={index} current={index === playhead} />)}</div>
         </>}
       </section>

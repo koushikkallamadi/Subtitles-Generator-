@@ -23,7 +23,7 @@ export default function PresetGrid({ selected, onSelect }: { selected: string; o
   return <section className="space-y-3">
     <SectionHeading eyebrow="1. CHOOSE A LOOK" title="Style presets" />
     <div className="grid grid-cols-2 gap-2.5">{CAPTION_PRESETS.slice(0, 8).map(renderCard)}</div>
-    <div className="flex justify-center pt-1"><button type="button" onClick={() => setOpen(true)} className="rounded-full border border-[#dc735c] px-3.5 py-2 text-xs font-semibold text-gray-100 transition hover:bg-[#dc735c]/10">Browse all styles ↗</button></div>
+    <div className="flex justify-center pt-1"><button type="button" onClick={() => setOpen(true)} className="browse-styles-button rounded-full border border-[#D65A26] bg-[#D65A26] px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#B8501F]">Browse all styles ↗</button></div>
     {open && <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
       <div role="dialog" aria-modal="true" aria-label="Browse all styles" className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-gray-700 bg-[#171a21] p-4 shadow-2xl">
         <div className="mb-4 flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-[#dc735c]">Explore</p><h3 className="mt-1 text-lg font-semibold">All styles</h3></div><button type="button" onClick={() => setOpen(false)} aria-label="Close styles" className="rounded-lg p-2 text-gray-400 hover:bg-white/10 hover:text-white"><X size={18} /></button></div>
@@ -34,7 +34,7 @@ export default function PresetGrid({ selected, onSelect }: { selected: string; o
 }
 
 export function SectionHeading({ eyebrow, title, right }: { eyebrow: string; title: string; right?: React.ReactNode }) {
-  return <div className="flex items-center justify-between border-b border-gray-700/70 pb-3"><div><p className="text-xs font-semibold tracking-wide text-[#dc735c]">{eyebrow}</p><h2 className="mt-0.5 text-sm font-semibold text-gray-100">{title}</h2></div>{right}</div>;
+  return <div className="flex items-center justify-between border-b border-[#F2C7AE] pb-3"><div><p className="text-xs font-semibold tracking-wide text-[#dc735c]">{eyebrow}</p><h2 className="mt-0.5 text-sm font-semibold text-gray-100">{title}</h2></div>{right}</div>;
 }
 
 

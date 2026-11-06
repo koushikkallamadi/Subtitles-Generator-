@@ -13,18 +13,18 @@ function SettingRow({ label, hint, chip, value, min, max, step = 1, onChange }: 
     setDraft(String(next));
     if (next !== value) onChange(next);
   };
-  return <label className="flex min-h-11 items-center justify-between gap-2 px-3 text-[13px] text-gray-200">
+  return <label className="flex min-h-11 items-center justify-between gap-2 px-3 text-[13px] text-ink">
     <span className="flex items-center gap-1.5">{label}<span title={hint}><Info size={13} className="text-gray-400" /></span></span>
-    <span className="flex h-8 items-center overflow-hidden rounded border border-gray-700 bg-[#191c23]">
-      <span className="grid h-full w-8 place-items-center border-r border-gray-700 text-xs text-gray-400">{chip}</span>
-      <input aria-label={label} title={hint} type="number" value={draft} min={min} max={max} step={step} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commit(); event.currentTarget.blur(); } }} className="h-full w-14 appearance-auto bg-transparent px-1 text-center font-mono text-sm text-white outline-none" />
+    <span className="flex h-8 items-center overflow-hidden rounded-lg border border-[#E6C8B8] bg-white">
+      <span className="grid h-full w-8 place-items-center border-r border-[#E6C8B8] bg-[#FDEBDD] text-xs text-[#B8501F]">{chip}</span>
+      <input aria-label={label} title={hint} type="number" value={draft} min={min} max={max} step={step} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commit(); event.currentTarget.blur(); } }} className="h-full w-14 appearance-auto bg-transparent px-1 text-center font-mono text-sm text-ink outline-none focus:ring-1 focus:ring-[#D65A26]" />
     </span>
   </label>;
 }
 
 export default function SettingsPanel({ onResegment }: { onResegment: (maxWords: number, lines: number) => void }) {
   const { timingOffset, setTimingOffset, maxWordsPerLine, maxLinesPerSubtitle } = useVideoStore();
-  return <div className="divide-y divide-gray-800/80 bg-[#171a20] py-1">
+  return <div className="divide-y divide-[#F2C7AE] bg-[#FFFCFA] py-1">
     <SettingRow label="Caption sync" hint="Adjust when captions appear relative to the video." chip="S" value={timingOffset} min={-1} max={1} step={0.05} onChange={setTimingOffset} />
     <SettingRow label="Max words per line" hint="Maximum words shown on one subtitle line." chip="#" value={maxWordsPerLine} min={1} max={10} onChange={(value) => onResegment(Math.max(1, Math.min(10, value)), maxLinesPerSubtitle)} />
     <SettingRow label="Lines per Subtitle" hint="Maximum lines shown in one subtitle cue." chip="L" value={maxLinesPerSubtitle} min={1} max={3} onChange={(value) => onResegment(maxWordsPerLine, Math.max(1, Math.min(3, value)))} />

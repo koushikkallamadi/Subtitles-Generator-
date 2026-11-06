@@ -101,14 +101,14 @@ export default function HomePage() {
               {uploadError && <p role="alert" className="mt-4 max-w-xl border-l-2 border-red-700 bg-red-50 px-4 py-3 text-sm text-red-800">{uploadError}</p>}
             </div>
 
-            <div className="relative mx-auto flex w-full max-w-[620px] flex-col items-center px-5 py-7 sm:px-10 lg:-translate-x-8 lg:py-9 xl:-translate-x-12">
+            <div className="relative mx-auto flex w-full max-w-[620px] flex-col items-center px-5 py-7 sm:px-10 lg:-translate-x-12 lg:py-9 xl:-translate-x-16">
               <div aria-hidden="true" className="absolute inset-x-6 top-1/2 h-[68%] -translate-y-1/2 bg-[radial-gradient(ellipse_at_center,rgba(17,17,17,.19),transparent_68%)] blur-xl" />
-              <div className="relative z-10 mb-[-1px] w-full rotate-[-3deg] bg-[#111111] px-8 py-4 text-center text-xs font-bold uppercase tracking-[.16em] text-white shadow-[0_12px_28px_rgba(17,17,17,.16)] sm:w-[88%]">{BRAND.name} · word by word</div>
-              <div className="relative z-10 grid aspect-[1.7/1] w-full place-items-center bg-[#111111] px-5 text-center text-[clamp(1.4rem,3vw,2.4rem)] font-bold leading-tight text-white shadow-[0_24px_48px_rgba(17,17,17,.18)] sm:w-[92%]">
+              <div className="relative z-10 mb-[-1px] w-full rotate-[-3deg] rounded-xl bg-[#111111] px-8 py-4 text-center text-xs font-bold uppercase tracking-[.16em] text-white shadow-[0_12px_28px_rgba(17,17,17,.16)] sm:w-[88%]">{BRAND.name} · word by word</div>
+              <div className="relative z-10 grid aspect-[1.7/1] w-full place-items-center rounded-2xl bg-[#111111] px-5 text-center text-[clamp(1.4rem,3vw,2.4rem)] font-bold leading-tight text-white shadow-[0_24px_48px_rgba(17,17,17,.18)] sm:w-[92%]">
                 <span>Har word,<br /><span className="text-[#FF8A45]">aapki awaaz.</span></span>
-                <span className="absolute right-[-12px] top-1/2 rotate-[4deg] bg-white px-3 py-2 text-xs font-semibold text-ink shadow-md sm:right-[-30px] sm:text-sm">हिंदी · Hinglish</span>
+                <span className="absolute right-[-12px] top-1/2 rotate-[4deg] rounded-md bg-white px-3 py-2 text-xs font-semibold text-ink shadow-md sm:right-[-30px] sm:text-sm">हिंदी · Hinglish</span>
               </div>
-              <div className="relative z-10 mt-[-1px] w-full rotate-[2deg] bg-[#111111] px-8 py-4 text-center text-xs font-bold tracking-wide text-white shadow-[0_14px_30px_rgba(17,17,17,.16)] sm:w-[88%]">Exports ready in seconds</div>
+              <div className="relative z-10 mt-[-1px] w-full rotate-[2deg] rounded-xl bg-[#111111] px-8 py-4 text-center text-xs font-bold tracking-wide text-white shadow-[0_14px_30px_rgba(17,17,17,.16)] sm:w-[88%]">Exports ready in seconds</div>
             </div>
           </div>
           {dragging && <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center bg-white/95"><p className="font-display text-3xl text-[var(--accent-strong)]"><ArrowUpFromLine className="mr-3 inline" />Drop your video to get started</p></div>}

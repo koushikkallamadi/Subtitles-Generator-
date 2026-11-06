@@ -192,9 +192,11 @@ html {
 .editor-theme .transcript-theme [class*="bg-[#191c22]"],
 .editor-theme .transcript-theme [class*="bg-[#22252b]"],
 .editor-theme .transcript-theme [class*="bg-[#22252c]"],
+.editor-theme .transcript-theme [class*="bg-[#171a20]"],
+.editor-theme .transcript-theme [class*="bg-[#191c23]"],
+.editor-theme .transcript-theme [class*="bg-[#202229]"],
 .editor-theme .transcript-theme [class*="bg-[#26292f]"],
 .editor-theme .transcript-theme [class*="bg-[#1b1e24]"],
-.editor-theme .transcript-theme [class*="bg-[#202229]"],
 .editor-theme .transcript-theme [class*="bg-[#202329]"],
 .editor-theme .transcript-theme [class*="bg-[#17191f]"],
 .editor-theme .transcript-theme [class*="bg-[#171a21]"],
@@ -204,12 +206,26 @@ html {
 .editor-theme .transcript-theme [class*="border-gray-700"],
 .editor-theme .transcript-theme [class*="border-gray-600"],
 .editor-theme .transcript-theme [class*="border-gray-800"] { border-color: var(--border) !important; }
+.editor-theme .transcript-theme [class*="divide-gray-800"] > :not([hidden]) ~ :not([hidden]) { border-color: var(--border) !important; }
 .editor-theme .transcript-theme [class*="text-gray-100"],
 .editor-theme .transcript-theme [class*="text-gray-200"],
 .editor-theme .transcript-theme [class*="text-gray-300"] { color: var(--ink) !important; }
 .editor-theme .transcript-theme [class*="text-gray-400"],
 .editor-theme .transcript-theme [class*="text-gray-500"] { color: var(--muted) !important; }
+.editor-theme .transcript-theme [class*="text-white"] { color: var(--ink) !important; }
+.editor-theme .transcript-theme input:not([type="color"]),
+.editor-theme .transcript-theme textarea,
+.editor-theme .transcript-theme select { border-color: #e6c8b8; background-color: #fff; color: var(--ink); }
+.editor-theme .transcript-theme .fine-tune-panel input:not([type="color"]),
+.editor-theme .transcript-theme .fine-tune-panel select { border-color: #D65A26 !important; }
+.editor-theme .transcript-theme input:focus,
+.editor-theme .transcript-theme textarea:focus,
+.editor-theme .transcript-theme select:focus { border-color: var(--accent-strong); outline-color: var(--accent-strong); }
 .editor-theme .transcript-theme [class*="text-[#dc735c]"] { color: var(--accent-strong) !important; }
 .editor-theme .transcript-theme [class*="bg-[#dc735c]"] { background-color: var(--accent-strong) !important; }
 .editor-theme .transcript-theme [class*="border-[#dc735c]"] { border-color: var(--accent-strong) !important; }
+.editor-theme .transcript-theme [class*="bg-[#dc735c]/15"] { background-color: var(--accent-soft) !important; color: var(--accent-strong) !important; }
+.editor-theme .transcript-theme .transcript-tab-active,
+.editor-theme .transcript-theme .browse-styles-button,
+.editor-theme .transcript-theme .fine-tune-selected[aria-pressed="true"] { color: #fff !important; }
 
