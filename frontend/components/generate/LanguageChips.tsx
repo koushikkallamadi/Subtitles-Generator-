@@ -26,8 +26,8 @@ export default function LanguageChips() {
             onClick={() => handleSelect(lang)}
             className={`rounded-full px-3 py-1 text-xs font-medium transition ${
               isSelected
-                ? "border border-[#f26543] text-white bg-transparent"
-                : "border border-gray-800 bg-[#141824] text-gray-400 hover:border-gray-700 hover:text-gray-300"
+                ? "border border-[var(--accent-strong)] bg-[#FDEBDD] text-ink"
+                : "border border-[var(--border)] bg-white text-muted hover:border-[var(--accent)] hover:text-ink"
             }`}
           >
             {lang}

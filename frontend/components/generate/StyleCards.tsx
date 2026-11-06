@@ -15,7 +15,7 @@ export default function StyleCards() {
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-xs font-semibold text-gray-300">Style</span>
+      <span className="text-xs font-semibold text-ink">Style</span>
 
       <div className={`grid gap-2.5 ${isEnglish ? "grid-cols-1" : "grid-cols-2"}`}>
         {/* Card 1: Romanized version */}
@@ -24,12 +24,12 @@ export default function StyleCards() {
           onClick={() => setStyle("roman")}
           className={`flex flex-col items-start justify-center rounded-2xl p-3 text-left transition ${
             style === "roman" || isEnglish
-              ? "border border-[#f26543] bg-[#1a1720]/70 shadow-sm"
-              : "border border-gray-800/80 bg-[#141824] hover:border-gray-700"
+              ? "border border-[var(--accent-strong)] bg-[#FDEBDD] shadow-sm"
+              : "border border-[var(--border)] bg-white hover:border-[var(--accent)]"
           }`}
         >
           <div className="flex items-center gap-1.5 w-full">
-            <span className="text-xs font-semibold text-gray-200 truncate">
+            <span className="text-xs font-semibold text-ink truncate">
               {currentOption.romanName}
             </span>
             {currentOption.isDesi && (
@@ -38,7 +38,7 @@ export default function StyleCards() {
               </span>
             )}
           </div>
-          <span className="mt-1 text-[11px] text-gray-400 truncate">
+          <span className="mt-1 text-[11px] text-muted truncate">
             {currentOption.romanDetail}
           </span>
         </button>
@@ -50,14 +50,14 @@ export default function StyleCards() {
             onClick={() => setStyle("native")}
             className={`flex flex-col items-start justify-center rounded-2xl p-3 text-left transition ${
               style === "native"
-                ? "border border-[#f26543] bg-[#1a1720]/70 shadow-sm"
-                : "border border-gray-800/80 bg-[#141824] hover:border-gray-700"
+                ? "border border-[var(--accent-strong)] bg-[#FDEBDD] shadow-sm"
+                : "border border-[var(--border)] bg-white hover:border-[var(--accent)]"
             }`}
           >
-            <span className="text-xs font-semibold text-gray-200 truncate">
+            <span className="text-xs font-semibold text-ink truncate">
               {currentOption.nativeName || currentOption.name}
             </span>
-            <span className="mt-1 text-[11px] text-gray-400 truncate">
+            <span className="mt-1 text-[11px] text-muted truncate">
               {currentOption.nativeDetail || "Native script"}
             </span>
           </button>

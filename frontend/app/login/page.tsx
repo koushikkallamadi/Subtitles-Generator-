@@ -1,10 +1,11 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { backendUrl } from "../../lib/projects";
 import { useAuth } from "../../components/AuthProvider";
+import { Button, DottedBackground, Logo } from "../../components/brand/BrandUI";
+import { BRAND } from "../../lib/brand";
 
 function LoginContent() {
   const params = useSearchParams();
@@ -34,14 +35,13 @@ function LoginContent() {
     window.location.assign(`${backendUrl}/auth/google/login?${new URLSearchParams({ next })}`);
   };
 
-  return <main className="min-h-screen bg-[#101114] text-white min-[900px]:grid min-[900px]:grid-cols-2">
-    <section className="relative hidden min-h-screen flex-col justify-between overflow-hidden bg-[radial-gradient(ellipse_at_10%_14%,#494148_0%,transparent_40%),linear-gradient(145deg,#67341f_0%,#a8472e_58%,#ce654b_100%)] p-10 min-[900px]:flex xl:p-16">
-      <div className="flex items-center gap-3">
-        <span className="text-xl font-semibold tracking-tight">Desi Subtitles</span>
-      </div>
+  return <main className="marketing-theme relative isolate min-h-screen overflow-hidden bg-[var(--bg)] text-ink min-[900px]:grid min-[900px]:grid-cols-2">
+    <DottedBackground />
+    <section className="relative flex min-h-[360px] flex-col justify-between overflow-hidden bg-[linear-gradient(145deg,#fff_0%,#FDEBDD_100%)] p-7 sm:p-10 min-[900px]:min-h-screen xl:p-16">
+      <div className="relative z-10 flex items-center gap-3"><Logo /></div>
 
-      <div className="mx-auto w-full max-w-[650px] rounded-[28px] border border-white/15 bg-[#111215]/90 p-5 shadow-2xl shadow-black/30">
-        <div className="mb-4 flex items-center justify-between text-[11px] text-gray-300"><span className="flex items-center gap-2 font-mono font-bold uppercase tracking-[.18em]"><i className="h-2 w-2 rounded-full bg-[#e27359]" /> Hinglish preview</span><span>Roman + native subtitles</span></div>
+      <div className="relative z-10 mx-auto my-8 w-full max-w-[650px] rounded-[28px] border border-[var(--border)] bg-white p-4 shadow-[0_24px_70px_rgba(17,17,17,.12)] sm:p-5">
+        <div className="mb-4 flex items-center justify-between text-[11px] text-gray-300"><span className="flex items-center gap-2 font-mono font-bold uppercase tracking-[.18em]"><i className="h-2 w-2 rounded-full bg-[#e27359]" /> Hinglish preview</span><span>Hinglish + native scripts</span></div>
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#f4f2f0]">
           <div className="flex h-7 items-center gap-1.5 bg-[#26272b] px-3"><i className="h-1.5 w-1.5 rounded-full bg-[#f16a5b]"/><i className="h-1.5 w-1.5 rounded-full bg-[#d9ae56]"/><i className="h-1.5 w-1.5 rounded-full bg-[#6bb782]"/><div className="ml-4 h-3 w-36 rounded-full bg-white/10"/></div>
           <div className="grid min-h-[230px] grid-cols-[1fr_135px] gap-3 p-3 sm:grid-cols-[1fr_170px]">
@@ -60,27 +60,28 @@ function LoginContent() {
         </div>
       </div>
 
-      <div className="max-w-xl text-[clamp(2rem,4vw,3.2rem)] font-bold leading-[1.08] tracking-tight"><span className="text-[#ed9c81]">Audio in.</span><br/>Desi subtitles out.</div>
+      <div className="relative z-10 max-w-xl font-display text-[clamp(2rem,4vw,3.2rem)] text-ink">Audio in.<br/><span className="text-[var(--accent-strong)]">{BRAND.tagline}</span></div>
     </section>
 
-    <section className="flex min-h-screen flex-col justify-center px-6 py-12 sm:px-12 lg:px-16 xl:px-24">
+    <section className="relative z-10 flex min-h-screen flex-col justify-center px-6 py-12 sm:px-12 lg:px-16 xl:px-24">
       <div className="mx-auto w-full max-w-[640px]">
-        <h1 className="text-3xl font-bold tracking-tight sm:text-[2.5rem]">Sign in to your account.</h1>
-        <p className="mt-4 text-lg text-gray-400">Get started for free.</p>
-        {errorMessage && <p role="alert" className="mt-8 rounded-xl border border-red-400/20 bg-red-400/5 px-4 py-3 text-sm text-red-200">{errorMessage}</p>}
-        <p className="mt-12 text-lg font-medium text-[#e27359]">Have a referral code?</p>
-        <button type="button" onClick={beginLogin} disabled={submitting} className="mt-5 flex w-full items-center justify-center gap-3 rounded-full border border-white/10 bg-[#1a1b1f] px-5 py-5 text-lg font-semibold transition hover:border-white/20 hover:bg-[#222328] disabled:cursor-wait disabled:opacity-70">
+        <p className="mb-5 text-sm font-semibold text-[var(--accent-strong)]">{BRAND.name}</p>
+        <h1 className="font-display text-3xl sm:text-[2.5rem]">Sign in to your account.</h1>
+        <p className="mt-4 text-lg text-muted">Get started for free.</p>
+        {errorMessage && <p role="alert" className="mt-8 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{errorMessage}</p>}
+        <p className="mt-12 text-lg font-medium text-ink">Sign in to create captions in the words you speak.</p>
+        <Button type="button" onClick={beginLogin} disabled={submitting} className="mt-5 w-full py-4 text-lg disabled:cursor-wait disabled:opacity-70">
           <svg aria-hidden="true" viewBox="0 0 48 48" className="h-6 w-6"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3A12 12 0 1 1 32 15.1l5.7-5.7A20 20 0 1 0 44 24c0-1.2-.1-2.3-.4-3.5Z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8A12 12 0 0 1 32 15.1l5.7-5.7A20 20 0 0 0 6.3 14.7Z"/><path fill="#4CAF50" d="M24 44a20 20 0 0 0 13.5-5.2l-6.2-5.2A12 12 0 0 1 12.8 28l-6.5 5A20 20 0 0 0 24 44Z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3a12.1 12.1 0 0 1-4 5.6l6.2 5.2A20 20 0 0 0 44 24c0-1.2-.1-2.3-.4-3.5Z"/></svg>
           {submitting ? "Redirecting to Google…" : "Continue with Google"}
-        </button>
+        </Button>
       </div>
-      <footer className="mx-auto mt-auto flex w-full max-w-[640px] items-center justify-center gap-3 pt-20 text-sm text-gray-500 sm:justify-end">
-        <span>© 2026 CaptionKit</span><span>·</span><Link className="hover:text-gray-300" href="/privacy">Privacy</Link><span>·</span><Link className="hover:text-gray-300" href="/terms">Terms</Link>
+      <footer className="mx-auto mt-auto flex w-full max-w-[640px] items-center justify-center gap-3 pt-20 text-sm text-muted sm:justify-end">
+        <span>© 2026 {BRAND.name}</span><span>·</span><a className="hover:text-[var(--accent-strong)]" href="/privacy">Privacy</a><span>·</span><a className="hover:text-[var(--accent-strong)]" href="/terms">Terms</a>
       </footer>
     </section>
   </main>;
 }
 
 export default function LoginPage() {
-  return <Suspense fallback={<div className="grid min-h-screen place-items-center bg-[#101114] text-sm text-gray-300">Loading…</div>}><LoginContent /></Suspense>;
+  return <Suspense fallback={<div className="marketing-theme grid min-h-screen place-items-center bg-[var(--bg)] text-sm text-muted">Loading…</div>}><LoginContent /></Suspense>;
 }

@@ -1,12 +1,12 @@
-# CaptionKit
+# Padalu
 
 **AI subtitle generator + editor for short videos (reels)**
 
 ## Overview
-CaptionKit lets you upload a short video (or audio), automatically generates word‑level timestamps, offers romanisation/translation for Indian languages, lets you edit cues on a timeline, style the subtitles, and export them as SRT/VTT, green‑screen MP4, or a fully burned‑in video.
+Padalu lets you upload a short video (or audio), automatically generates word‑level timestamps, offers Hinglish, Tenglish, native-script captions, and translation for Indian languages, lets you edit cues on a timeline, style the subtitles, and export them as SRT/VTT, green‑screen MP4, or a fully burned‑in video.
 
 ### Tech stack
-- **Frontend** – Next.js (App Router) + TypeScript + Tailwind CSS + Zustand (dark theme, coral accent `#E0725F`).
+- **Frontend** – Next.js (App Router) + TypeScript + Tailwind CSS + Zustand (light marketing theme; dark editor).
 - **Backend** – FastAPI (Python) + SQLite (dev) / PostgreSQL (prod) + SQLAlchemy. Background jobs use FastAPI `BackgroundTasks`.
 - **Media** – FFmpeg (must be installed on the system). Used for audio extraction, waveform generation, and final video rendering.
 - **Transcription** – Abstract `TranscriptionProvider` with two implementations:
@@ -93,4 +93,4 @@ npm test
 
 ---
 
-Enjoy building subtitles with CaptionKit! 🎬📝
+Enjoy building subtitles with Padalu! 🎬📝

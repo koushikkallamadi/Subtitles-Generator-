@@ -24,21 +24,21 @@ export default function SourceCard() {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-300">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-ink">
         <span>Source</span>
-        <Info className="h-3.5 w-3.5 text-gray-500" />
+        <Info className="h-3.5 w-3.5 text-muted" />
       </div>
 
-      <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-800/80 bg-[#141824] p-3 shadow-sm">
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--border)] bg-white p-3 shadow-sm">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-gray-800 bg-[#0f131f] text-gray-400">
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-[var(--border)] bg-[#FAF8F5] text-[var(--accent-strong)]">
             <Film className="h-5 w-5" />
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="truncate text-xs font-medium text-gray-200">
+            <span className="truncate text-xs font-medium text-ink">
               {projectName || "media_01 (4).mp4"}
             </span>
-            <span className="truncate text-[11px] text-gray-400">
+            <span className="truncate text-[11px] text-muted">
               Your video is ready to be processed · {formattedSize} MB
             </span>
           </div>
@@ -47,7 +47,7 @@ export default function SourceCard() {
         <button
           type="button"
           onClick={handleRemove}
-          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-800 hover:text-white"
+          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-[#FDEBDD] hover:text-ink"
           title="Remove video"
           aria-label="Remove video"
         >

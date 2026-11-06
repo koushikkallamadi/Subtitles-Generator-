@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { Sparkles, Loader2, AlertCircle, CheckCircle, Info } from "lucide-react";
 import { useVideoStore } from "../../store/videoStore";
+import { BRAND } from "../../lib/brand";
 import { backendUrl } from "../../lib/projects";
 import { useAuth } from "../../components/AuthProvider";
 
@@ -136,15 +137,15 @@ export default function GenerateButton() {
       const sampleText =
         style === "roman"
           ? language === "Telugu"
-            ? "Namaskaram! Welcome to CaptionKit."
+            ? `Namaskaram! Welcome to ${BRAND.name}.`
             : language === "Tamil"
-            ? "Vanakkam! Welcome to CaptionKit."
-            : "Namaste! Welcome to CaptionKit."
+            ? `Vanakkam! Welcome to ${BRAND.name}.`
+            : `Namaste! Welcome to ${BRAND.name}.`
           : language === "Telugu"
-          ? "నమస్కారం! CaptionKit కి స్వాగతం."
+          ? `నమస్కారం! ${BRAND.name} కి స్వాగతం.`
           : language === "Tamil"
-          ? "வணக்கம்! CaptionKit-க்கு வரவேற்கிறோம்."
-          : "नमस्ते! CaptionKit में आपका स्वागत है।";
+          ? `வணக்கம்! ${BRAND.name}-க்கு வரவேற்கிறோம்.`
+          : `नमस्ते! ${BRAND.name} में आपका स्वागत है।`;
 
       setCues([
         { start: 0.5, end: 3.5, text: sampleText },
@@ -182,7 +183,7 @@ export default function GenerateButton() {
         </div>
       )}
 
-      <div className="text-center text-xs text-gray-400">
+      <div className="text-center text-xs text-muted">
         Cost: {cost} {cost === 1 ? "credit" : "credits"}
       </div>
 
@@ -190,7 +191,7 @@ export default function GenerateButton() {
         type="button"
         disabled={isGenerating}
         onClick={handleGenerate}
-        className="relative overflow-hidden w-full rounded-2xl bg-[#d96b52] py-3.5 text-center font-medium text-white shadow-lg transition hover:bg-[#e0755c] active:scale-[0.99] disabled:opacity-85"
+        className="relative overflow-hidden w-full rounded-full bg-[var(--accent-strong)] py-3.5 text-center font-semibold text-white shadow-md transition hover:bg-[#B8501F] active:scale-[0.99] disabled:opacity-85"
       >
         {isGenerating ? (
           <div className="flex items-center justify-center gap-2">

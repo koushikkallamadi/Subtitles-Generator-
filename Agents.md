@@ -1,6 +1,8 @@
-# CaptionKit
+# Padalu
 
-AI subtitle generator and editor for short videos (reels) with strong Indian language support (Telugu, Hindi, Tamil, Marathi, Urdu, English). Users upload a video, pick the spoken language and a style (Roman letters like Tenglish/Hinglish, or native script), and get editable subtitles on a timeline.
+The product name, tagline, description, support email, and domain come from `frontend/lib/brand.ts`. Update that file when the brand changes.
+
+Subtitle generator and editor for short videos with Indian language support. Users can create editable captions in familiar styles such as Hinglish and Tenglish, or in native scripts including Telugu, Hindi, Tamil, Marathi and Urdu.
 
 ## Stack
 - Frontend: Next.js 14 (App Router, TypeScript, Tailwind, Zustand) in /frontend
@@ -30,3 +32,4 @@ Transcript tab polish, saving projects in a database (a refresh loses the video)
 - Say clearly what you did NOT finish. Never claim something works unless you ran it.
 - UI polish comes last. Functionality first.
 - Use small components and keep state in the existing Zustand store.
+- Marketing pages, login, privacy and terms use the light theme tokens defined in `frontend/app/globals.css`; the editor stays dark for now.

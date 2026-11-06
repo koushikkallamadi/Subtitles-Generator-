@@ -54,15 +54,15 @@ export default function LanguageSelect() {
 
   return (
     <div className="relative flex flex-col gap-2" ref={dropdownRef}>
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-300">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-ink">
         <span>Spoken language</span>
-        <Info className="h-3.5 w-3.5 text-gray-500" />
+        <Info className="h-3.5 w-3.5 text-muted" />
       </div>
 
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-between rounded-xl border border-gray-800/80 bg-[#141824] px-3.5 py-2.5 text-sm text-gray-200 shadow-sm transition hover:border-gray-700 focus:outline-none"
+        className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-white px-3.5 py-2.5 text-sm text-ink shadow-sm transition hover:border-[var(--accent)] focus:outline-none"
       >
         <div className="flex items-center gap-2 truncate">
           <span className="font-medium">
@@ -70,22 +70,22 @@ export default function LanguageSelect() {
             {currentOption.native ? ` (${currentOption.native})` : ""}
           </span>
           {currentOption.isDesi && (
-            <span className="rounded bg-orange-950/60 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-orange-400 border border-orange-500/30">
+            <span className="rounded bg-[#FDEBDD] px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-[var(--accent-strong)] border border-[var(--accent)]">
               DESI
             </span>
           )}
         </div>
         <ChevronDown
-          className={`h-4 w-4 text-gray-400 transition-transform ${
+          className={`h-4 w-4 text-muted transition-transform ${
             isOpen ? "rotate-180" : ""
           }`}
         />
       </button>
 
       {isOpen && (
-        <div className="absolute top-[calc(100%+4px)] left-0 right-0 z-50 flex max-h-72 flex-col rounded-xl border border-gray-800 bg-[#141824] shadow-2xl backdrop-blur-lg">
-          <div className="border-b border-gray-800 p-2">
-            <div className="flex items-center gap-2 rounded-lg bg-[#0b0f1a] px-2.5 py-1.5 text-xs text-gray-300">
+        <div className="absolute top-[calc(100%+4px)] left-0 right-0 z-50 flex max-h-72 flex-col rounded-xl border border-[var(--border)] bg-white shadow-2xl backdrop-blur-lg">
+          <div className="border-b border-[var(--border)] p-2">
+            <div className="flex items-center gap-2 rounded-lg bg-[#FAF8F5] px-2.5 py-1.5 text-xs text-muted">
               <Search className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
               <input
                 ref={inputRef}
@@ -93,14 +93,14 @@ export default function LanguageSelect() {
                 placeholder="Search languages..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-transparent text-xs text-white placeholder-gray-500 outline-none"
+                className="w-full bg-transparent text-xs text-ink placeholder-gray-500 outline-none"
               />
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-1 text-xs">
             {filteredLanguages.length === 0 ? (
-              <div className="px-3 py-4 text-center text-xs text-gray-500">
+              <div className="px-3 py-4 text-center text-xs text-muted">
                 No languages found
               </div>
             ) : (
@@ -114,15 +114,15 @@ export default function LanguageSelect() {
                     onClick={() => handleSelectLanguage(lang.name)}
                     className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition ${
                       isSelected
-                        ? "bg-orange-500/15 text-orange-400 font-medium"
-                        : "text-gray-300 hover:bg-gray-800/60 hover:text-white"
+                        ? "bg-[#FDEBDD] text-[var(--accent-strong)] font-medium"
+                        : "text-muted hover:bg-[#FAF8F5] hover:text-ink"
                     }`}
                   >
                     <span className="truncate">
                       {lang.name} {lang.native ? `(${lang.native})` : ""}
                     </span>
                     {lang.isDesi && (
-                      <span className="ml-2 rounded bg-orange-950/60 px-1 py-0.5 text-[9px] font-bold tracking-wider text-orange-400 border border-orange-500/30">
+                      <span className="ml-2 rounded bg-[#FDEBDD] px-1 py-0.5 text-[9px] font-bold tracking-wider text-[var(--accent-strong)] border border-[var(--accent)]">
                         DESI
                       </span>
                     )}

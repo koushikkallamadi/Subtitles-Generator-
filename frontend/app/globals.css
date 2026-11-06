@@ -15,3 +15,201 @@ html {
 .caption-line { display: flex; width: 100%; align-items: baseline; justify-content: center; white-space: nowrap; }
 .caption-word { display: inline-block; vertical-align: baseline; transform-origin: center center; }
 
+:root {
+  --bg: #FFFFFF;
+  --surface: #FFFFFF;
+  --ink: #111111;
+  --muted: #4D4D4D;
+  --border: #E6E1DB;
+  --accent: #FF8A45;
+  --accent-strong: #D65A26;
+  --accent-soft: #FDEBDD;
+  --highlight: #FF8A45;
+  --dark: #111111;
+}
+
+.marketing-theme {
+  color: var(--ink);
+  background: var(--bg);
+  font-family: var(--font-inter), Inter, sans-serif;
+}
+
+.font-display {
+  font-family: var(--font-poppins), Poppins, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+}
+
+.font-telugu { font-family: var(--font-noto-telugu), "Noto Sans Telugu", sans-serif; line-height: 1.5; }
+.font-devanagari { font-family: var(--font-noto-devanagari), "Noto Sans Devanagari", sans-serif; }
+[lang="te"], .telugu-text { line-height: 1.5; }
+
+.logo-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  color: var(--accent-strong);
+}
+
+.brand-wordmark { text-transform: lowercase; }
+.brand-wordmark-highlight { position: relative; z-index: 0; }
+.brand-wordmark-highlight::before {
+  position: absolute;
+  z-index: -1;
+  content: "";
+  inset: 0.13em -0.03em 0.02em;
+  border-radius: 0.12em;
+  background: var(--highlight);
+  transform: rotate(-1.5deg);
+}
+
+.marker-highlight {
+  display: inline-block;
+  padding: 0.02em 0.18em;
+  border-radius: 0;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  background-image: linear-gradient(var(--highlight), var(--highlight));
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: 0% 100%;
+  transition: background-size 850ms cubic-bezier(.2,.7,.2,1);
+  transform: none;
+  color: var(--ink);
+  box-shadow: 0 0 0 1px transparent;
+}
+.marker-highlight.is-visible { background-size: 100% 100%; }
+.marker-highlight.marker-subtitles { padding-bottom: .16em; }
+@media (prefers-reduced-motion: reduce) {
+  .marker-highlight { background-size: 100% 100%; transition: none; }
+}
+
+.dotted-background { position: absolute; z-index: 0; inset: 0; overflow: hidden; pointer-events: none; }
+.dotted-background-glow {
+  position: absolute;
+  inset: -12% -8% auto auto;
+  width: min(68vw, 760px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(253,235,221,.9) 0%, rgba(253,235,221,.4) 42%, transparent 72%);
+}
+.dotted-background-pattern {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(210,98,45,.20) 1.2px, transparent 1.35px);
+  background-size: 26px 26px;
+  mask-image: linear-gradient(135deg, rgba(0,0,0,.75), transparent 78%), linear-gradient(to bottom, #000 25%, transparent 95%);
+  mask-composite: intersect;
+  -webkit-mask-image: linear-gradient(135deg, rgba(0,0,0,.75), transparent 78%), linear-gradient(to bottom, #000 25%, transparent 95%);
+  -webkit-mask-composite: source-in;
+}
+.dotted-background-arcs { position: absolute; inset: -14% -12% auto auto; width: min(78vw, 900px); height: min(78vw, 680px); fill: none; }
+.dotted-background-arcs circle { stroke: rgba(210,98,45,.25); stroke-width: 1.5; stroke-dasharray: 6 12; }
+.marketing-dotted-lines { position: absolute; z-index: 1; inset: -10% -10% auto -10%; width: 120%; height: 120%; fill: none; pointer-events: none; }
+.marketing-dotted-lines path { stroke: rgba(255,138,69,.56); stroke-width: 2.8; stroke-dasharray: 9 15; }
+.marketing-dotted-lines circle { fill: #FF8A45; opacity: .9; }
+.hero-orange-glow { position: absolute; z-index: 0; top: -12%; right: -10%; width: min(68vw, 980px); height: 95%; pointer-events: none; background: radial-gradient(ellipse at top right, rgba(255,138,69,.25) 0%, rgba(255,138,69,.12) 40%, transparent 76%); }
+.dot-cluster { position: absolute; display: grid; gap: 8px; opacity: .35; }
+.dot-cluster::before { display: block; width: 4px; height: 4px; border-radius: 50%; background: var(--accent); content: ""; }
+.dot-cluster-three::before { box-shadow: 12px 0 var(--accent), 24px 0 var(--accent), 0 12px var(--accent), 12px 12px var(--accent), 24px 12px var(--accent), 0 24px var(--accent), 12px 24px var(--accent), 24px 24px var(--accent); }
+.dot-cluster-four::before { box-shadow: 12px 0 var(--accent), 24px 0 var(--accent), 36px 0 var(--accent), 0 12px var(--accent), 12px 12px var(--accent), 24px 12px var(--accent), 36px 12px var(--accent); }
+.dot-cluster-three { top: 20%; left: 7%; }
+.dot-cluster-four { right: 12%; bottom: 17%; transform: scale(.8); }
+.arc-dot { position: absolute; top: 19%; right: 18%; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: .65; }
+
+.brand-button {
+  display: inline-flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  gap: .6rem;
+  border-radius: 9999px;
+  padding: .75rem 1.4rem;
+  font-weight: 600;
+  transition: transform 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+.brand-button:hover { transform: translateY(-1px); }
+.brand-button:focus-visible { outline: 3px solid var(--highlight); outline-offset: 3px; }
+.brand-button-primary { background: var(--accent-strong); color: #fff; }
+.brand-button-primary:hover { background: #A9441A; }
+.brand-button-secondary { border: 1.5px solid var(--ink); background: #fff; color: var(--ink); }
+.brand-button-secondary:hover { background: var(--accent-soft); }
+@media (prefers-reduced-motion: reduce) { .brand-button { transition: none; } .brand-button:hover { transform: none; } }
+
+/* Editor surfaces follow the Padalu light brand while the video canvas remains dark. */
+.editor-theme::before {
+  position: absolute;
+  z-index: 0;
+  inset: 4rem 0 0;
+  content: "";
+  pointer-events: none;
+  background-image: radial-gradient(rgba(214, 90, 38, .24) 1.35px, transparent 1.6px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(to right, rgba(0,0,0,.48), transparent 48%, rgba(0,0,0,.32));
+}
+.editor-theme::after {
+  position: absolute;
+  z-index: 0;
+  top: 4rem;
+  right: -10rem;
+  width: min(55vw, 780px);
+  height: min(48vw, 620px);
+  content: "";
+  pointer-events: none;
+  background: radial-gradient(ellipse at top right, rgba(255,138,69,.20), rgba(253,235,221,.10) 44%, transparent 74%);
+}
+.editor-theme > div { position: relative; z-index: 1; }
+.editor-theme .editor-accent-lines { z-index: 0; opacity: .62; }
+.editor-theme .editor-preview-well {
+  background-color: #faf8f5;
+  background-image: radial-gradient(rgba(214,90,38,.24) 1.2px, transparent 1.5px), radial-gradient(ellipse at 88% 0%, rgba(255,138,69,.16), transparent 58%);
+  background-size: 26px 26px, auto;
+}
+.editor-theme .editor-sidebar {
+  background-image: radial-gradient(ellipse at 95% 0%, rgba(255,138,69,.14), transparent 44%);
+}
+.editor-theme header [class*="text-gray-400"] { color: var(--muted) !important; }
+.editor-theme header [class*="text-gray-200"] { color: var(--ink) !important; }
+.editor-theme .timeline-shell [class*="border-gray-800"] { border-color: var(--border) !important; }
+.editor-theme .timeline-shell [class*="border-gray-700"] { border-color: var(--border) !important; }
+.editor-theme .timeline-shell [class*="bg-[#0d121f]"] { background-color: #fff !important; }
+.editor-theme .timeline-shell [class*="bg-[#0f1423]"] { background-color: #faf8f5 !important; }
+.editor-theme .timeline-shell [class*="bg-[#0c101c]"] { background-color: #f7f5f0 !important; }
+.editor-theme .timeline-shell [class*="bg-[#0b0f1a]"] { background-color: #fff !important; }
+.editor-theme .timeline-shell [class*="from-blue-950"] { background: linear-gradient(90deg, #fdebdD, #fff) !important; }
+.editor-theme .timeline-shell [class*="from-orange-950"] { background: #fdebdD !important; }
+.editor-theme .timeline-shell [class*="text-gray-100"],
+.editor-theme .timeline-shell [class*="text-gray-200"],
+.editor-theme .timeline-shell [class*="text-gray-300"] { color: var(--ink) !important; }
+.editor-theme .timeline-shell [class*="text-gray-400"],
+.editor-theme .timeline-shell [class*="text-gray-500"] { color: var(--muted) !important; }
+.editor-theme .timeline-shell [class*="text-orange-100"] { color: var(--ink) !important; }
+.editor-theme .timeline-shell [class*="border-yellow-400"] { border-color: var(--accent-strong) !important; }
+.editor-theme .timeline-shell [class*="bg-orange-500"] { background-color: var(--accent-strong) !important; }
+.editor-theme .timeline-shell [class*="bg-[#FDEBDD]"] { background-color: #FDEBDD !important; }
+.editor-theme .transcript-theme [class*="bg-[#1a1e2b]"],
+.editor-theme .transcript-theme [class*="bg-[#191c22]"],
+.editor-theme .transcript-theme [class*="bg-[#22252b]"],
+.editor-theme .transcript-theme [class*="bg-[#22252c]"],
+.editor-theme .transcript-theme [class*="bg-[#26292f]"],
+.editor-theme .transcript-theme [class*="bg-[#1b1e24]"],
+.editor-theme .transcript-theme [class*="bg-[#202229]"],
+.editor-theme .transcript-theme [class*="bg-[#202329]"],
+.editor-theme .transcript-theme [class*="bg-[#17191f]"],
+.editor-theme .transcript-theme [class*="bg-[#171a21]"],
+.editor-theme .transcript-theme [class*="bg-[#282a30]"],
+.editor-theme .transcript-theme [class*="bg-[#23262d]"],
+.editor-theme .transcript-theme [class*="bg-[#322421]"] { background-color: #fff !important; }
+.editor-theme .transcript-theme [class*="border-gray-700"],
+.editor-theme .transcript-theme [class*="border-gray-600"],
+.editor-theme .transcript-theme [class*="border-gray-800"] { border-color: var(--border) !important; }
+.editor-theme .transcript-theme [class*="text-gray-100"],
+.editor-theme .transcript-theme [class*="text-gray-200"],
+.editor-theme .transcript-theme [class*="text-gray-300"] { color: var(--ink) !important; }
+.editor-theme .transcript-theme [class*="text-gray-400"],
+.editor-theme .transcript-theme [class*="text-gray-500"] { color: var(--muted) !important; }
+.editor-theme .transcript-theme [class*="text-[#dc735c]"] { color: var(--accent-strong) !important; }
+.editor-theme .transcript-theme [class*="bg-[#dc735c]"] { background-color: var(--accent-strong) !important; }
+.editor-theme .transcript-theme [class*="border-[#dc735c]"] { border-color: var(--accent-strong) !important; }
+

@@ -13,6 +13,7 @@ import TranscriptTab from "../../components/TranscriptTab";
 import CaptionOverlay from "../../components/style/CaptionOverlay";
 import { backendUrl, fetchProject, fetchProjectCues, patchProject, saveProjectCues, uploadProject } from "../../lib/projects";
 import { useAuth } from "../../components/AuthProvider";
+import { DottedLines } from "../../components/brand/BrandUI";
 
 export default function EditorPage() {
   return <Suspense fallback={<div className="grid h-screen place-items-center bg-[#0b0f1a] text-sm text-gray-300">Loading project…</div>}><EditorContent /></Suspense>;
@@ -184,22 +185,23 @@ useEffect(() => {
     finally { setReuploading(false); }
   };
 
-  if (projectLoading) return <div className="grid h-screen place-items-center bg-[#0b0f1a] text-sm text-gray-300">Loading project…</div>;
-  if (mediaMissing) return <div className="flex h-screen flex-col bg-[#0b0f1a] text-white"><TopBar projectName={projectName} savingState={store.savingState} /><main className="m-auto w-full max-w-lg rounded-2xl border border-gray-800 bg-[#151a26] p-8 text-center"><h1 className="text-lg font-semibold">This video is no longer stored</h1><p className="mt-2 text-sm text-gray-400">Your project and subtitles are still available. Pick the video again to restore playback.</p><label className="mt-5 inline-flex cursor-pointer rounded-lg bg-[#d96b52] px-4 py-2 text-sm font-medium text-white">{reuploading ? "Uploading…" : "Pick your video again"}<input type="file" accept="video/*,audio/*" className="hidden" disabled={reuploading} onChange={(event) => void recoverMissingMedia(event)} /></label>{loadError && <p role="alert" className="mt-3 text-sm text-red-300">{loadError}</p>}</main></div>;
-  if (loadError && !videoUrl) return <div className="grid h-screen place-items-center bg-[#0b0f1a] text-sm text-red-300">{loadError}</div>;
+  if (projectLoading) return <div className="marketing-theme grid h-screen place-items-center text-sm text-muted">Loading project…</div>;
+  if (mediaMissing) return <div className="marketing-theme flex h-screen flex-col"><TopBar theme="editor" projectName={projectName} savingState={store.savingState} /><main className="m-auto w-full max-w-lg rounded-2xl border border-[var(--border)] bg-white p-8 text-center shadow-lg"><h1 className="text-lg font-semibold text-ink">This video is no longer stored</h1><p className="mt-2 text-sm text-muted">Your project and subtitles are still available. Pick the video again to restore playback.</p><label className="brand-button brand-button-primary mt-5 inline-flex cursor-pointer">{reuploading ? "Uploading…" : "Pick your video again"}<input type="file" accept="video/*" className="hidden" disabled={reuploading} onChange={(event) => void recoverMissingMedia(event)} /></label>{loadError && <p role="alert" className="mt-3 text-sm text-red-700">{loadError}</p>}</main></div>;
+  if (loadError && !videoUrl) return <div className="marketing-theme grid h-screen place-items-center text-sm text-red-700">{loadError}</div>;
   if (!videoUrl) {
     return null;
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#0b0f1a] text-white">
-      <TopBar projectName={projectName} savingState={store.savingState} />
+    <div className="editor-theme marketing-theme relative flex h-screen flex-col overflow-hidden bg-[#FAF8F5] text-ink">
+      <TopBar theme="editor" projectName={projectName} savingState={store.savingState} />
+      <DottedLines className="editor-accent-lines" />
       <div className="flex flex-1 overflow-hidden">
         {/* Left column: Video preview, TransportBar, Timeline */}
-        <main className="flex flex-1 flex-col h-full overflow-hidden">
+        <main className="relative z-10 flex flex-1 flex-col h-full overflow-hidden bg-white">
           {/* Video preview (flex-1, min-h-0, shrinks) */}
-          <div className="flex flex-1 min-h-0 items-center justify-center p-4 bg-black/40 overflow-hidden">
-            <div className="relative flex h-full max-h-full w-full items-center justify-center rounded-2xl bg-black overflow-hidden shadow-2xl">
+          <div className="editor-preview-well flex flex-1 min-h-0 items-center justify-center p-4 overflow-hidden">
+            <div className="relative flex h-full max-h-full w-full items-center justify-center rounded-2xl bg-[#111111] overflow-hidden shadow-xl ring-1 ring-black/10">
               <video
                 ref={videoRef}
                 crossOrigin="use-credentials"
@@ -223,7 +225,7 @@ useEffect(() => {
           </div>
 
           {/* TransportBar (play, time, scrubber) */}
-          <div className="w-full px-4 pb-2">
+          <div className="w-full bg-white px-4 pb-2">
             <TransportBar
               isPlaying={isPlaying}
               onTogglePlay={togglePlay}
@@ -244,7 +246,7 @@ useEffect(() => {
 
         {/* Right sidebar */}
         {cues && cues.length > 0 ? (
-          <div className="flex min-w-0 flex-col h-full w-[26rem] bg-[#1a1e2b] p-3">
+          <div className="transcript-theme relative z-10 flex min-w-0 flex-col h-full w-[26rem] border-l border-[var(--border)] bg-white p-3 text-ink">
             <TranscriptTab onRegenerate={handleRegenerate} />
           </div>
         ) : (

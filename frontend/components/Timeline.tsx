@@ -28,6 +28,23 @@ interface TimelineProps {
 }
 
 const BASE_PIXELS_PER_SECOND = 100;
+const audioNodes = new WeakMap<HTMLMediaElement, { context: AudioContext; analyser: AnalyserNode }>();
+
+const AudioWaveform = React.memo(function AudioWaveform({ levels, revision, width, height = 48 }: { levels: number[]; revision: number; width: number; height?: number }) {
+  const bars = Math.max(1, levels.length);
+  const step = width / bars;
+  return <svg aria-label="Audio waveform; taller bars indicate louder audio" role="img" viewBox={`0 0 ${Math.max(width, 1)} ${height}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
+    <title>Audio levels across the clip</title>
+    <line x1="0" x2={width} y1={height / 2} y2={height / 2} stroke="#D65A26" strokeOpacity=".18" strokeWidth="1" />
+    {levels.map((level, index) => {
+      if (level <= 0.015) return null;
+      const amplitude = Math.min(1, Math.max(0.06, level));
+      const barHeight = Math.max(2, amplitude * (height - 8));
+      return <rect key={index} x={index * step + step * 0.16} y={(height - barHeight) / 2} width={Math.max(1, step * 0.68)} height={barHeight} rx={Math.min(1.5, step * 0.2)} fill="#D65A26" opacity={0.32 + amplitude * 0.62} />;
+    })}
+    <metadata>{revision}</metadata>
+  </svg>;
+});
 
 function formatShortTime(seconds: number): string {
   if (isNaN(seconds) || seconds < 0) seconds = 0;
@@ -46,10 +63,73 @@ export default function Timeline({
   const { cues, timingOffset, selectedCueIndex, undoCueHistory, redoCueHistory } = useVideoStore();
   const [dragView, setDragView] = useState<{ index: number; start: number; end: number } | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [waveformRevision, setWaveformRevision] = useState(0);
+  const levelsRef = useRef<number[]>([]);
   const drag = useRef<{ index: number; edge: 'move' | 'start' | 'end'; startX: number; pointerId: number; before: Cue[]; clientX: number; alt: boolean } | null>(null);
   const rafId = useRef(0);
   const suppressClick = useRef(false);
   const timelineDuration = duration > 0 ? duration : 6;
+
+  useEffect(() => {
+    const video = document.querySelector<HTMLVideoElement>("video");
+    if (!video) return;
+    const bucketCount = Math.max(300, Math.min(6000, Math.ceil(timelineDuration * 20)));
+    levelsRef.current = Array(bucketCount).fill(0);
+    let interval = 0;
+    let lastBucket = -1;
+    let context: AudioContext | null = null;
+    let analyser: AnalyserNode | null = null;
+    let data: Uint8Array | null = null;
+
+    const sample = async () => {
+      try {
+        if (!context || !analyser || !data) {
+          const existing = audioNodes.get(video);
+          if (existing) ({ context, analyser } = existing);
+          else {
+            context = new AudioContext();
+            analyser = context.createAnalyser();
+            analyser.fftSize = 1024;
+            const source = context.createMediaElementSource(video);
+            source.connect(analyser);
+            analyser.connect(context.destination);
+            audioNodes.set(video, { context, analyser });
+          }
+          data = new Uint8Array(analyser.fftSize);
+        }
+        if (context.state === "suspended") await context.resume();
+        analyser.getByteTimeDomainData(data);
+        let sumSquares = 0;
+        for (let index = 0; index < data.length; index += 1) {
+          const value = data[index];
+          const normalized = (value - 128) / 128;
+          sumSquares += normalized * normalized;
+        }
+        const rms = Math.sqrt(sumSquares / data.length);
+        const bucket = Math.max(0, Math.min(bucketCount - 1, Math.floor(video.currentTime / Math.max(timelineDuration, 0.01) * bucketCount)));
+        levelsRef.current[bucket] = Math.max(levelsRef.current[bucket], Math.min(1, rms * 3.5));
+        if (bucket !== lastBucket) {
+          lastBucket = bucket;
+          setWaveformRevision((revision) => revision + 1);
+        }
+      } catch {
+        // Keep the track usable when audio analysis is blocked by browser policy.
+      }
+    };
+    const onPlaying = () => {
+      if (!interval) interval = window.setInterval(() => void sample(), 80);
+      void sample();
+    };
+    const onPaused = () => { window.clearInterval(interval); interval = 0; };
+    video.addEventListener("playing", onPlaying);
+    video.addEventListener("pause", onPaused);
+    if (!video.paused) onPlaying();
+    return () => {
+      window.clearInterval(interval);
+      video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("pause", onPaused);
+    };
+  }, [timelineDuration]);
 
   useEffect(() => {
     if (selectedCueIndex === null) return;
@@ -150,7 +230,7 @@ export default function Timeline({
   const playheadLeft = currentTime * pixelsPerSecond;
 
   return (
-    <div className="flex h-[220px] w-full flex-col border-t border-gray-800 bg-[#0d121f] text-gray-300 select-none">
+    <div className="timeline-shell flex h-[220px] w-full flex-col border-t border-[var(--border)] bg-white text-muted select-none">
       {/* Toolbar row */}
       <div className="flex h-10 items-center justify-between border-b border-gray-800/80 px-4 text-xs">
         {/* Left tools */}
@@ -251,12 +331,14 @@ export default function Timeline({
             <div className="relative h-12 border-b border-gray-800/60 py-1.5 px-0.5 bg-[#0b0f1a]/50">
               <div
                 style={{ width: `${clipWidth}px` }}
-                className="group relative flex h-full flex-col justify-center rounded-lg border border-blue-500/40 bg-gradient-to-r from-blue-950/70 to-indigo-950/60 px-2.5 text-white shadow-sm overflow-hidden"
+                className="group relative flex h-full flex-col justify-center overflow-hidden border border-[#E6E1DB] bg-[#FDEBDD] px-2.5 text-ink shadow-sm"
               >
+                <AudioWaveform levels={levelsRef.current} revision={waveformRevision} width={clipWidth} />
+                <span className="pointer-events-none absolute inset-y-0 left-0 z-[1] w-64 bg-gradient-to-r from-[#FDEBDD] via-[#FDEBDD]/95 to-transparent" />
                 <span className="truncate text-[11px] font-medium leading-tight">
                   {fileName || "Video Clip"}
                 </span>
-                <span className="text-[10px] text-gray-400 leading-tight">
+                <span className="text-[10px] text-muted leading-tight">
                   0:00 - {formatShortTime(safeDuration)}
                 </span>
               </div>

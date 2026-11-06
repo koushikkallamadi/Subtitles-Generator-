@@ -4,10 +4,11 @@ import { useVideoStore } from '../../store/videoStore';
 import { useRouter } from 'next/navigation';
 import { backendUrl, saveProjectCues, uploadProject } from '../../lib/projects';
 import { useAuth } from '../../components/AuthProvider';
+import { BRAND } from '../../lib/brand';
 
 // Sample cues (pre‑made, 2‑3 seconds each)
 const SAMPLE_CUES = [
-  { start: 0, end: 2, text: 'Welcome to CaptionKit!' },
+  { start: 0, end: 2, text: `Welcome to ${BRAND.name}!` },
   { start: 2, end: 4, text: 'Create subtitles for your reels' },
   { start: 4, end: 6, text: 'Supports Indian languages' },
 ];

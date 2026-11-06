@@ -30,12 +30,12 @@ export default function TransportBar({
   };
 
   return (
-    <div className="flex w-full items-center gap-4 px-4 py-3 bg-[#0d121f]/90 border border-gray-800 rounded-xl backdrop-blur-md">
+    <div className="flex w-full items-center gap-4 px-4 py-3 bg-white border border-[var(--border)] rounded-xl shadow-sm">
       {/* Play/Pause Button */}
       <button
         type="button"
         onClick={onTogglePlay}
-        className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-orange-500 text-white shadow-md transition hover:bg-orange-600 active:scale-95"
+        className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[var(--accent-strong)] text-white shadow-md transition hover:bg-[#B8501F] active:scale-95"
         aria-label={isPlaying ? "Pause" : "Play"}
       >
         {isPlaying ? (
@@ -46,7 +46,7 @@ export default function TransportBar({
       </button>
 
       {/* Timecode */}
-      <span className="font-mono text-xs text-gray-300 select-none flex-shrink-0">
+      <span className="font-mono text-xs text-muted select-none flex-shrink-0">
         {formatTime(currentTime)} / {formatTime(duration)}
       </span>
 
@@ -58,11 +58,11 @@ export default function TransportBar({
         step={0.01}
         value={currentTime}
         onChange={handleSliderChange}
-        className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-gray-700 accent-orange-500 hover:bg-gray-600 transition"
+        className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-[#E6E1DB] accent-[#D65A26] hover:bg-[#d8d0c5] transition"
       />
 
       {/* Volume Icon */}
-      <div className="flex items-center text-gray-400 hover:text-white transition flex-shrink-0">
+      <div className="flex items-center text-muted hover:text-ink transition flex-shrink-0">
         <Volume2 className="h-5 w-5" />
       </div>
     </div>
