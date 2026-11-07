@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12-slim-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -7,10 +7,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UPLOAD_DIR=./data/uploads \
     EXPORT_DIR=./data/exports \
     TEMP_DIR=./data/tmp \
-    FONT_DIR=/usr/share/fonts
+    FONT_DIR=/app/backend/fonts
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg fontconfig fonts-poppins fonts-noto-core fonts-noto-extra \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    fontconfig \
+    fonts-noto-core \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 appuser \
     && mkdir -p /app/backend/data/uploads /app/backend/data/exports /app/backend/data/tmp \
@@ -20,6 +22,8 @@ WORKDIR /app/backend
 COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
+COPY fonts/ ./fonts/
+RUN fc-cache -f
 
 USER appuser
 EXPOSE 8000
