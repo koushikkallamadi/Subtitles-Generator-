@@ -71,14 +71,15 @@ def _read_signed(token: str | None, expected_type: str) -> dict | None:
         return None
 
 
-def _secure_cookie(request: Request) -> bool:
-    return request.url.hostname not in {"localhost", "127.0.0.1", "::1"}
+def _secure_cookie() -> bool:
+    return settings.BACKEND_URL.strip().lower().startswith("https://")
 
 
-def _set_session(response: Response, request: Request, user_id: str) -> None:
+def _set_session(response: Response, user_id: str) -> None:
     now = int(time.time())
     token = _sign({"typ": "session", "sub": user_id, "iat": now, "exp": now + SESSION_SECONDS})
-    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_SECONDS, httponly=True, secure=_secure_cookie(request), samesite="lax", path="/")
+    secure = _secure_cookie()
+    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_SECONDS, httponly=True, secure=secure, samesite="None" if secure else "Lax", path="/")
 
 
 def _rate_limit(request: Request, route: str) -> None:
@@ -115,7 +116,7 @@ def get_current_user(request: Request, response: Response) -> User:
         if user is None:
             raise HTTPException(status_code=401, detail="Sign in required")
         if int(payload.get("exp", 0)) - int(time.time()) < SESSION_SECONDS // 2:
-            _set_session(response, request, user.id)
+            _set_session(response, user.id)
         return user
 
 
@@ -132,7 +133,7 @@ def google_login(request: Request, next: str = "/"):
     callback = f"{settings.BACKEND_URL.rstrip('/')}/auth/google/callback"
     query = urlencode({"client_id": settings.GOOGLE_CLIENT_ID, "redirect_uri": callback, "response_type": "code", "scope": "openid email profile", "state": state, "nonce": nonce, "code_challenge": challenge, "code_challenge_method": "S256", "prompt": "select_account"})
     response = RedirectResponse(f"{settings.GOOGLE_AUTH_URL}?{query}", status_code=302)
-    response.set_cookie(FLOW_COOKIE, flow, max_age=FLOW_SECONDS, httponly=True, secure=_secure_cookie(request), samesite="lax", path="/auth/google")
+    response.set_cookie(FLOW_COOKIE, flow, max_age=FLOW_SECONDS, httponly=True, secure=_secure_cookie(), samesite="Lax", path="/auth/google")
     return response
 
 
@@ -198,7 +199,10 @@ async def google_callback(request: Request, code: str | None = None, state: str 
             user_id = user.id
         destination = _safe_next(str(flow.get("next", "/")))
         response = RedirectResponse(f"{settings.FRONTEND_URL.rstrip('/')}{destination}", status_code=302)
-        _set_session(response, request, user_id)
+        _set_session(response, user_id)
+        secure = _secure_cookie()
+        same_site = "None" if secure else "Lax"
+        logger.info("Google OAuth callback issued session cookie (SameSite=%s, Secure=%s); redirecting to frontend host %s", same_site, secure, urlparse(settings.FRONTEND_URL).netloc)
         response.delete_cookie(FLOW_COOKIE, path="/auth/google")
         return response
     except httpx.RequestError as exc:
