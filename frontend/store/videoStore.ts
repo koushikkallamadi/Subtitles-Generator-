@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { DEFAULT_STYLE, mergeCaptionStyle, validateCaptionStyle } from '../lib/captionStyle';
 import type { CaptionStyle, CaptionStylePatch } from '../lib/captionStyle';
-import { detectCaptionPreset } from '../lib/captionPresets';
+import { detectCaptionPreset, PRESET_BY_NAME } from '../lib/captionPresets';
 import { syncCueWords } from '../lib/cueTiming';
 
 import type { WordTimestamp } from '../lib/captionStyle';
@@ -18,7 +18,7 @@ export type Cue = {
 };
 
 export type { CaptionStyle } from '../lib/captionStyle';
-export const DEFAULT_CAPTION_STYLE = DEFAULT_STYLE;
+export const DEFAULT_CAPTION_STYLE = PRESET_BY_NAME.Premium || DEFAULT_STYLE;
 
 type VideoState = {
   videoUrl: string | null; cues: Cue[]; projectName: string; fileSize: number; duration: number; language: string;
@@ -67,7 +67,7 @@ function segment(words: WordTimestamp[], maxWords: number, lines: number): Cue[]
 
 export const useVideoStore = create<VideoState>()(persist((set) => ({
   videoUrl: null, cues: [], projectName: '', fileSize: 0, duration: 0, language: 'Hindi', projectId: null, savingState: 'saved',
-  style: 'roman', timingOffset: 0, captionStyle: DEFAULT_CAPTION_STYLE, selectedCaptionPreset: 'Highlight', maxWordsPerLine: 2, maxLinesPerSubtitle: 2, originalCues: [], selectedCueIndex: null, undoCueHistory: [], redoCueHistory: [],
+  style: 'roman', timingOffset: 0, captionStyle: DEFAULT_CAPTION_STYLE, selectedCaptionPreset: 'Premium', maxWordsPerLine: 2, maxLinesPerSubtitle: 2, originalCues: [], selectedCueIndex: null, undoCueHistory: [], redoCueHistory: [],
   setVideoData: (url, name, size, dur) => set({ videoUrl: url, projectName: name, fileSize: size, duration: dur, cues: [], originalCues: [], projectId: null, savingState: 'saved' }),
   setProjectId: (projectId) => set({ projectId }), setSavingState: (savingState) => set({ savingState }),
   setCues: (items) => set((state) => {
@@ -138,7 +138,7 @@ export const useVideoStore = create<VideoState>()(persist((set) => ({
   resegmentCues: (maxWordsPerLine, maxLinesPerSubtitle) => set((state) => ({
     cues: segment(state.cues.flatMap(wordsForCue), maxWordsPerLine, maxLinesPerSubtitle), maxWordsPerLine, maxLinesPerSubtitle, selectedCueIndex: null,
   })),
-  clearVideo: () => set({ videoUrl: null, cues: [], originalCues: [], projectName: '', fileSize: 0, duration: 0, language: 'Hindi', style: 'roman', timingOffset: 0, captionStyle: DEFAULT_CAPTION_STYLE, selectedCaptionPreset: 'Highlight', selectedCueIndex: null, projectId: null, savingState: 'saved' }),
+  clearVideo: () => set({ videoUrl: null, cues: [], originalCues: [], projectName: '', fileSize: 0, duration: 0, language: 'Hindi', style: 'roman', timingOffset: 0, captionStyle: DEFAULT_CAPTION_STYLE, selectedCaptionPreset: 'Premium', selectedCueIndex: null, projectId: null, savingState: 'saved' }),
 }), { name: 'video-store', partialize: ({ videoUrl, undoCueHistory, redoCueHistory, ...rest }) => {
   if (videoUrl?.startsWith('blob:')) return rest;
   return { ...rest, videoUrl };

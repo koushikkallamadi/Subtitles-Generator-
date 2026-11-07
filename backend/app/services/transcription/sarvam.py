@@ -276,7 +276,7 @@ class SarvamProvider(BaseTranscriptionProvider):
         mode: str,
     ) -> Tuple[str, List[WordTimestamp], List[Segment], bool, str]:
         """Call Sarvam synchronous /speech-to-text endpoint for a single chunk <= 30s."""
-        url = "https://api.sarvam.ai/speech-to-text"
+        url = f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/speech-to-text"
         headers = {
             "api-subscription-key": settings.SARVAM_API_KEY.strip(),
         }
@@ -408,10 +408,11 @@ class SarvamProvider(BaseTranscriptionProvider):
         # Re-encode chunks to sample-accurate PCM. Stream-copying MP3 could
         # introduce frame-sized seek errors that accumulate at every boundary.
         result_chunks: List[Tuple[str, float]] = []
+        os.makedirs(settings.TEMP_DIR, exist_ok=True)
         for idx, (s, e) in enumerate(chunks):
             duration = e - s
             chunk_file = os.path.join(
-                tempfile.gettempdir(),
+                settings.TEMP_DIR,
                 f"chunk_{os.path.basename(audio_path)}_{idx}.wav"
             )
             cmd = [
@@ -484,7 +485,7 @@ class SarvamProvider(BaseTranscriptionProvider):
             logger.info("Submitting Sarvam batch job request...")
             async with httpx.AsyncClient(timeout=30.0) as client:
                 res_create = await client.post(
-                    "https://api.sarvam.ai/speech-to-text/job/v1",
+                    f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/speech-to-text/job/v1",
                     headers=headers,
                     json=job_payload,
                 )
@@ -508,7 +509,7 @@ class SarvamProvider(BaseTranscriptionProvider):
             upload_payload = {"job_id": job_id, "files": [filename]}
             async with httpx.AsyncClient(timeout=30.0) as client:
                 res_upload = await client.post(
-                    "https://api.sarvam.ai/speech-to-text/job/v1/upload-files",
+                    f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/speech-to-text/job/v1/upload-files",
                     headers=headers,
                     json=upload_payload,
                 )
@@ -546,7 +547,7 @@ class SarvamProvider(BaseTranscriptionProvider):
             # 4. Start the job
             async with httpx.AsyncClient(timeout=30.0) as client:
                 res_start = await client.post(
-                    f"https://api.sarvam.ai/speech-to-text/job/v1/{job_id}/start",
+                    f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/speech-to-text/job/v1/{job_id}/start",
                     headers=headers,
                 )
 
@@ -557,7 +558,7 @@ class SarvamProvider(BaseTranscriptionProvider):
             logger.info(f"Sarvam batch job {job_id} started successfully. Polling for results...")
 
             # 5. Poll for completion (up to 120s)
-            status_url = f"https://api.sarvam.ai/speech-to-text/job/v1/{job_id}/status"
+            status_url = f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/speech-to-text/job/v1/{job_id}/status"
             job_details = None
             for poll_idx in range(40):
                 await asyncio.sleep(3.0)
@@ -585,7 +586,7 @@ class SarvamProvider(BaseTranscriptionProvider):
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 dl_res = await client.post(
-                    "https://api.sarvam.ai/speech-to-text/job/v1/download-files",
+                    f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/speech-to-text/job/v1/download-files",
                     headers=headers,
                     json={"job_id": job_id, "files": [out_filename]},
                 )

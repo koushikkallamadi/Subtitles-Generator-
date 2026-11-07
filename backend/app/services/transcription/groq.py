@@ -65,7 +65,7 @@ class GroqProvider(BaseTranscriptionProvider):
         if not self.is_configured():
             raise ValueError("GROQ_API_KEY is not configured in settings/environment.")
 
-        url = "https://api.groq.com/openai/v1/audio/transcriptions"
+        url = f"{settings.GROQ_API_BASE_URL.rstrip('/')}/audio/transcriptions"
         headers = {
             "Authorization": f"Bearer {settings.GROQ_API_KEY.strip()}",
         }

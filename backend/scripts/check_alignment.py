@@ -49,7 +49,7 @@ def sarvam_current_pipeline(path: str, language: str, style: str) -> Transcripti
 
     if duration <= 30:
         with open(path, "rb") as audio, httpx.Client(timeout=60.0) as client:
-            response = client.post("https://api.sarvam.ai/speech-to-text", headers={"api-subscription-key": api_key}, data={"model": "saaras:v4", "mode": mode, "language_code": language_code, "with_timestamps": "true"}, files={"file": (Path(path).name, audio, "audio/mpeg")})
+            response = client.post(f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/speech-to-text", headers={"api-subscription-key": api_key}, data={"model": "saaras:v4", "mode": mode, "language_code": language_code, "with_timestamps": "true"}, files={"file": (Path(path).name, audio, "audio/mpeg")})
         if response.status_code != 200:
             raise RuntimeError(f"Sarvam REST returned HTTP {response.status_code}")
         payload = response.json()
@@ -61,12 +61,12 @@ def sarvam_current_pipeline(path: str, language: str, style: str) -> Transcripti
     else:
         # Mirror the production batch flow, without importing its async wrapper.
         with httpx.Client(timeout=90.0) as client:
-            created = client.post("https://api.sarvam.ai/speech-to-text/job/v1", headers=headers, json={"job_parameters": {"model": "saaras:v4", "mode": mode, "with_timestamps": True, "with_diarization": False, "language_code": language_code}})
+            created = client.post(f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/speech-to-text/job/v1", headers=headers, json={"job_parameters": {"model": "saaras:v4", "mode": mode, "with_timestamps": True, "with_diarization": False, "language_code": language_code}})
             if created.status_code not in (200, 201, 202):
                 raise RuntimeError(f"Sarvam batch create returned HTTP {created.status_code}")
             job_id = created.json().get("job_id")
             filename = Path(path).name
-            upload = client.post("https://api.sarvam.ai/speech-to-text/job/v1/upload-files", headers=headers, json={"job_id": job_id, "files": [filename]})
+            upload = client.post(f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/speech-to-text/job/v1/upload-files", headers=headers, json={"job_id": job_id, "files": [filename]})
             if upload.status_code != 200:
                 raise RuntimeError(f"Sarvam batch upload URL returned HTTP {upload.status_code}")
             upload_meta = upload.json().get("upload_urls", {}).get(filename, {})
@@ -76,13 +76,13 @@ def sarvam_current_pipeline(path: str, language: str, style: str) -> Transcripti
                 uploaded = client.put(upload_meta["file_url"], content=audio.read(), headers={"Content-Type": "audio/mpeg"})
             if uploaded.status_code not in (200, 201, 204):
                 raise RuntimeError(f"Sarvam storage upload returned HTTP {uploaded.status_code}")
-            started = client.post(f"https://api.sarvam.ai/speech-to-text/job/v1/{job_id}/start", headers=headers)
+            started = client.post(f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/speech-to-text/job/v1/{job_id}/start", headers=headers)
             if started.status_code != 200:
                 raise RuntimeError(f"Sarvam batch start returned HTTP {started.status_code}")
             job_details = None
             for _ in range(40):
                 time.sleep(3.0)
-                status = client.get(f"https://api.sarvam.ai/speech-to-text/job/v1/{job_id}/status", headers={"api-subscription-key": api_key})
+                status = client.get(f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/speech-to-text/job/v1/{job_id}/status", headers={"api-subscription-key": api_key})
                 if status.status_code != 200:
                     continue
                 state = status.json()
@@ -95,7 +95,7 @@ def sarvam_current_pipeline(path: str, language: str, style: str) -> Transcripti
                 raise RuntimeError("Sarvam batch job did not complete within 120 seconds")
             outputs = job_details[0].get("outputs", [])
             output_name = outputs[0].get("file_name", "0.json") if outputs else "0.json"
-            download = client.post("https://api.sarvam.ai/speech-to-text/job/v1/download-files", headers=headers, json={"job_id": job_id, "files": [output_name]})
+            download = client.post(f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/speech-to-text/job/v1/download-files", headers=headers, json={"job_id": job_id, "files": [output_name]})
             if download.status_code != 200:
                 raise RuntimeError(f"Sarvam download URL returned HTTP {download.status_code}")
             download_meta = download.json().get("download_urls", {}).get(output_name, {})
@@ -118,7 +118,7 @@ def groq_whisper(path: str, language: str) -> TranscriptionResult:
     if language_code:
         data["language"] = language_code
     with open(path, "rb") as audio, httpx.Client(timeout=httpx.Timeout(120.0, connect=30.0)) as client:
-        response = client.post("https://api.groq.com/openai/v1/audio/transcriptions", headers={"Authorization": f"Bearer {settings.GROQ_API_KEY.strip()}"}, data=data, files={"file": (Path(path).name, audio, "audio/mpeg")})
+        response = client.post(f"{settings.GROQ_API_BASE_URL.rstrip('/')}/audio/transcriptions", headers={"Authorization": f"Bearer {settings.GROQ_API_KEY.strip()}"}, data=data, files={"file": (Path(path).name, audio, "audio/mpeg")})
     if response.status_code != 200:
         raise RuntimeError(f"Groq Whisper returned HTTP {response.status_code}")
     payload = response.json()

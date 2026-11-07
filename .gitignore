@@ -24,16 +24,22 @@ env/
 
 # Environment and secrets
 .env
-backend/.env
-.env.local
-.env.development
-.env.production
-.env.*.local
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
 
 # Media files
 *.mp4
 *.mov
 *.mp3
+*.sqlite
+*.sqlite3
+*.db-journal
+**/data/
+**/uploads/
+**/exports/
 
 # Logs and package managers
 *.log

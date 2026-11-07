@@ -21,7 +21,9 @@ from app.services import export as export_service
 from app.services.export import get_job, start_job
 
 router = APIRouter(tags=["projects"])
-STORAGE_ROOT = Path(__file__).resolve().parents[2] / "storage"
+UPLOAD_ROOT = Path(settings.UPLOAD_DIR)
+EXPORT_ROOT = Path(settings.EXPORT_DIR)
+TEMP_ROOT = Path(settings.TEMP_DIR)
 
 
 class ProjectPatch(BaseModel):
@@ -59,7 +61,7 @@ class ExportFeedbackRequest(BaseModel):
 
 
 def project_media_path(project_id: str) -> Path | None:
-    folder = STORAGE_ROOT / project_id
+    folder = UPLOAD_ROOT / project_id
     if not folder.is_dir():
         return None
     return next((path for path in folder.glob("original.*") if path.is_file()), None)
@@ -88,16 +90,20 @@ async def create_project(
     if not re.fullmatch(r"\.[a-z0-9]{1,10}", suffix):
         suffix = ".mp4"
     project_id = str(uuid.uuid4())
-    folder = STORAGE_ROOT / project_id
+    folder = UPLOAD_ROOT / project_id
     folder.mkdir(parents=True, exist_ok=False)
     destination = folder / f"original{suffix}"
     size = 0
     try:
         with destination.open("wb") as target:
             while chunk := await file.read(1024 * 1024):
-                target.write(chunk)
                 size += len(chunk)
+                if size > settings.MAX_UPLOAD_MB * 1024 * 1024:
+                    raise HTTPException(status_code=413, detail=f"Upload exceeds the {settings.MAX_UPLOAD_MB} MB limit")
+                target.write(chunk)
         duration = get_media_duration(str(destination))
+        if duration > settings.MAX_VIDEO_SECONDS:
+            raise HTTPException(status_code=413, detail=f"Videos must be {settings.MAX_VIDEO_SECONDS} seconds or shorter on the free plan")
         project = Project(
             id=project_id, title=(title or Path(original_name).stem)[:255], file_name=original_name[:255],
             size=size, duration=duration, language=language[:64], style=style[:32], settings_json={}, user_id=user.id,
@@ -144,12 +150,13 @@ def patch_project(project_id: str, patch: ProjectPatch, user: User = Depends(get
 
 @router.delete("/projects/{project_id}")
 def delete_project(project_id: str, user: User = Depends(get_current_user)):
-    folder = STORAGE_ROOT / project_id
+    folder = UPLOAD_ROOT / project_id
     with SessionLocal() as db:
         project = owned_project(db, project_id, user)
         db.delete(project)
         db.commit()
     shutil.rmtree(folder, ignore_errors=True)
+    shutil.rmtree(EXPORT_ROOT / project_id, ignore_errors=True)
     return {"deleted": True, "id": project_id}
 
 
@@ -173,7 +180,10 @@ def start_project_export(project_id: str, kind: str, payload: ExportRequest | No
             style = settings_json.get("captionStyle") or {}
         offset = payload.timingOffset if payload and payload.timingOffset is not None else settings_json.get("timingOffset", 0)
         cue_data = [{"start": cue.start, "end": cue.end, "text": cue.text, "words_json": cue.words_json or []} for cue in cues]
-    job_id, existing = start_job(project_id, kind, source, cue_data, style, float(offset or 0))
+    try:
+        job_id, existing = start_job(project_id, kind, source, cue_data, style, float(offset or 0))
+    except export_service.ExportBusy:
+        raise HTTPException(status_code=409, detail="An export is already running. Please try again shortly.")
     job = get_job(job_id) or {}
     return {"job_id": job_id, "status": job.get("status", "queued"), "step": job.get("step", "Queued"), "percent": job.get("percent", 0), "indeterminate": job.get("indeterminate", False), "existing": existing}
 
@@ -234,7 +244,7 @@ def download_project_export(project_id: str, kind: str, user: User = Depends(get
         raise HTTPException(status_code=422, detail="Export kind must be 'video' or 'greenscreen'")
     with SessionLocal() as db:
         owned_project(db, project_id, user)
-    path = STORAGE_ROOT / project_id / f"export_{kind}.mp4"
+    path = EXPORT_ROOT / project_id / f"export_{kind}.mp4"
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Export is not ready. Start the export and wait for it to complete.")
 
@@ -243,7 +253,10 @@ def download_project_export(project_id: str, kind: str, user: User = Depends(get
             while chunk := source.read(1024 * 1024):
                 yield chunk
 
-    return StreamingResponse(stream_export(), media_type="video/mp4", headers={"Content-Disposition": f'attachment; filename="export_{kind}.mp4"'})
+    from fastapi import BackgroundTasks as ResponseBackgroundTasks
+    cleanup = ResponseBackgroundTasks()
+    cleanup.add_task(path.unlink, missing_ok=True)
+    return StreamingResponse(stream_export(), media_type="video/mp4", headers={"Content-Disposition": f'attachment; filename="export_{kind}.mp4"'}, background=cleanup)
 
 
 @router.get("/projects/{project_id}/cues")
@@ -323,4 +336,5 @@ def cleanup_expired_media():
     with SessionLocal() as db:
         expired = db.scalars(select(Project).where(Project.created_at < cutoff)).all()
         for project in expired:
-            shutil.rmtree(STORAGE_ROOT / project.id, ignore_errors=True)
+            shutil.rmtree(UPLOAD_ROOT / project.id, ignore_errors=True)
+            shutil.rmtree(EXPORT_ROOT / project.id, ignore_errors=True)

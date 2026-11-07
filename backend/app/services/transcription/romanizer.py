@@ -24,7 +24,7 @@ async def call_groq_chat_completion(
     api_key: str,
     temperature: float = 0.1,
 ) -> str:
-    url = "https://api.groq.com/openai/v1/chat/completions"
+    url = f"{settings.GROQ_API_BASE_URL.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key.strip()}",
         "Content-Type": "application/json",

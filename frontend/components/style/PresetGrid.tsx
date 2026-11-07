@@ -9,7 +9,7 @@ function Sample({ preset }: { preset: CaptionPreset }) {
   const sampleWords = preset.sample.split(/\s+/).map((text, index) => ({ text, start: index * .3, end: (index + 1) * .3 }));
   const sampleStyle = preset.style;
   return <div className="flex h-24 items-center justify-center overflow-hidden rounded-xl bg-[radial-gradient(ellipse_at_50%_42%,#383B45_0%,#17191F_74%)] px-2.5" style={{ containerType: 'inline-size' }}>
-    <CaptionRenderer style={sampleStyle} text={preset.sample} words={sampleWords} activeWordIndex={0} revealedWordIndex={sampleWords.length - 1} containerSize={{ width: 260, height: 320 }} />
+    <CaptionRenderer style={sampleStyle} text={preset.sample} words={sampleWords} activeWordIndex={preset.activeWordIndex ?? 0} revealedWordIndex={sampleWords.length - 1} containerSize={{ width: 260, height: 320 }} />
   </div>;
 }
 
@@ -29,7 +29,7 @@ export default function PresetGrid({ selected, onSelect }: { selected: string; o
     </button>;
   };
   return <section className="space-y-3">
-    <SectionHeading eyebrow="1. CHOOSE A LOOK" title="Style presets" />
+    <SectionHeading eyebrow="1. CHOOSE A LOOK" title="Premium caption presets" />
     <div className="grid grid-cols-2 gap-2.5">{CAPTION_PRESETS.slice(0, 8).map(renderCard)}</div>
     <div className="flex justify-center pt-1"><button type="button" onClick={() => setOpen(true)} className="browse-styles-button rounded-full border border-[#D65A26] bg-[#D65A26] px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#B8501F]">Browse all styles ↗</button></div>
     {open && <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>

@@ -131,7 +131,7 @@ def google_login(request: Request, next: str = "/"):
     flow = _sign({"typ": "oauth_flow", "state": state, "nonce": nonce, "verifier": verifier, "next": next_path, "iat": now, "exp": now + FLOW_SECONDS})
     callback = f"{settings.BACKEND_URL.rstrip('/')}/auth/google/callback"
     query = urlencode({"client_id": settings.GOOGLE_CLIENT_ID, "redirect_uri": callback, "response_type": "code", "scope": "openid email profile", "state": state, "nonce": nonce, "code_challenge": challenge, "code_challenge_method": "S256", "prompt": "select_account"})
-    response = RedirectResponse(f"https://accounts.google.com/o/oauth2/v2/auth?{query}", status_code=302)
+    response = RedirectResponse(f"{settings.GOOGLE_AUTH_URL}?{query}", status_code=302)
     response.set_cookie(FLOW_COOKIE, flow, max_age=FLOW_SECONDS, httponly=True, secure=_secure_cookie(request), samesite="lax", path="/auth/google")
     return response
 
@@ -156,7 +156,7 @@ async def google_callback(request: Request, code: str | None = None, state: str 
     try:
         callback = f"{settings.BACKEND_URL.rstrip('/')}/auth/google/callback"
         async with httpx.AsyncClient(timeout=12) as client:
-            token_response = await client.post("https://oauth2.googleapis.com/token", data={
+            token_response = await client.post(settings.GOOGLE_TOKEN_URL, data={
                 "code": code, "client_id": settings.GOOGLE_CLIENT_ID,
                 "client_secret": settings.GOOGLE_CLIENT_SECRET, "redirect_uri": callback,
                 "grant_type": "authorization_code", "code_verifier": flow["verifier"],

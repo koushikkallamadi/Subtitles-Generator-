@@ -191,16 +191,30 @@ async def start_transcription(
             project_source = project_media_path(project_id)
     cleanup_input = True
     if file is not None:
+        os.makedirs(settings.TEMP_DIR, exist_ok=True)
         suffix = os.path.splitext(file.filename or "")[1] or ".mp4"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-            content = await file.read()
-            temp_file.write(content)
-            temp_input_path = temp_file.name
-        await file.close()
+        size = 0
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=settings.TEMP_DIR) as temp_file:
+                temp_input_path = temp_file.name
+                while chunk := await file.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > settings.MAX_UPLOAD_MB * 1024 * 1024:
+                        raise HTTPException(status_code=413, detail=f"Upload exceeds the {settings.MAX_UPLOAD_MB} MB limit")
+                    temp_file.write(chunk)
+        except Exception:
+            if "temp_input_path" in locals():
+                _remove_temp_file(temp_input_path)
+            raise
+        finally:
+            await file.close()
         input_duration = get_media_duration(temp_input_path)
         if input_duration <= 0:
             _remove_temp_file(temp_input_path)
             raise HTTPException(status_code=422, detail="Could not read the video duration")
+        if input_duration > settings.MAX_VIDEO_SECONDS:
+            _remove_temp_file(temp_input_path)
+            raise HTTPException(status_code=413, detail=f"Videos must be {settings.MAX_VIDEO_SECONDS} seconds or shorter on the free plan")
     elif project_id:
         if project_source is None:
             raise HTTPException(status_code=404, detail="Project media not found")
@@ -208,6 +222,8 @@ async def start_transcription(
         input_duration = project_duration or get_media_duration(temp_input_path)
         if input_duration <= 0:
             raise HTTPException(status_code=422, detail="Could not read the video duration")
+        if input_duration > settings.MAX_VIDEO_SECONDS:
+            raise HTTPException(status_code=413, detail=f"Videos must be {settings.MAX_VIDEO_SECONDS} seconds or shorter on the free plan")
         cleanup_input = False
     else:
         raise HTTPException(status_code=422, detail="Provide a video file or project_id")

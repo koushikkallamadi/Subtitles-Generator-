@@ -1,96 +1,78 @@
 # Padalu
 
-**AI subtitle generator + editor for short videos (reels)**
+Padalu turns speech in short videos and audio into editable, word-timed captions. It supports Indian languages, Roman-script styles such as Hinglish and Tenglish, native scripts, cue editing, caption styling, and video or subtitle exports.
 
-## Overview
-Padalu lets you upload a short video (or audio), automatically generates word‑level timestamps, offers Hinglish, Tenglish, native-script captions, and translation for Indian languages, lets you edit cues on a timeline, style the subtitles, and export them as SRT/VTT, green‑screen MP4, or a fully burned‑in video.
+## Repository layout
 
-### Tech stack
-- **Frontend** – Next.js (App Router) + TypeScript + Tailwind CSS + Zustand (light marketing theme; dark editor).
-- **Backend** – FastAPI (Python) + SQLite (dev) / PostgreSQL (prod) + SQLAlchemy. Background jobs use FastAPI `BackgroundTasks`.
-- **Media** – FFmpeg (must be installed on the system). Used for audio extraction, waveform generation, and final video rendering.
-- **Transcription** – Abstract `TranscriptionProvider` with two implementations:
-  1. **Groq/OpenAI Whisper API** (default, needs an API key).
-  2. **Local `faster‑whisper`** fallback (no key).
-- **Romanisation / Translation** – LLM abstraction (`TranslationProvider`). Defaults to Gemini API; can be swapped.
-- **Auth** – Google Sign‑In via NextAuth + a "continue as guest" mode for local dev.
+| Path | Responsibility |
+| --- | --- |
+| `frontend/` | The current Next.js application: marketing pages, sign-in, editor, timeline, transcript, styling, and browser-side state. |
+| `backend/` | FastAPI API, database models, authentication, project/media handling, transcription, segmentation, and export jobs. |
+| `docs/` | Architecture notes and contributor workflow. |
+| `app/`, `store/`, and root Node configuration | Earlier root-level Next.js prototype retained in the repository. The active application and normal development commands are under `frontend/`. |
 
-## Getting started (Windows)
-1. **Install FFmpeg** – open PowerShell and run:
-   ```powershell
-   winget install -e --id Gyan.FFmpeg
-   ```
-   Verify with `ffmpeg -version`.
-2. **Clone the repo** (or copy the generated files into a folder).
-3. **Backend**
-   ```powershell
-   cd backend
-   python -m venv .venv
-   .venv\Scripts\activate
-   pip install -r requirements.txt
-   # copy .env.example to .env and fill in keys you have (Groq, Gemini). For dev you can leave them empty.
-   uvicorn app.main:app --reload
-   ```
-   The API will be available at `http://127.0.0.1:8000`.
-4. **Frontend**
-   ```powershell
-   cd frontend
-   npm install
-   # copy .env.example to .env (only NEXT_PUBLIC_BACKEND_URL is required)
-   npm run dev
-   ```
-   Open `http://localhost:3000` in a browser.
-5. **Try the sample** – the "Try a sample" button loads a bundled 6‑second video with pre‑generated cues, so you can explore the editor without any API keys.
+See [the architecture guide](docs/architecture.md) for module responsibilities and data flow.
 
-## Environment variables (`.env.example`)
-```
-# ---------- Backend ----------
-# FastAPI secret key (any random string)
-SECRET_KEY=super-secret-key
-# Database URL – dev uses SQLite automatically
-DATABASE_URL=sqlite:///./captionkit.db
-# FFmpeg binary path (optional, defaults to "ffmpeg" on PATH)
-FFMPEG_PATH=ffmpeg
+## Requirements
 
-# Transcription provider – "groq", "openai" or "local"
-TRANSCRIPTION_PROVIDER=local
-# Groq / OpenAI API key (optional if you use local provider)
-GROQ_API_KEY=
-OPENAI_API_KEY=
+- Node.js and npm
+- Python 3.11 or newer (the backend dependencies are listed in `backend/requirements.txt`)
+- FFmpeg available on `PATH` for media processing and exports
+- API credentials for the transcription or text services selected in the backend settings
 
-# Translation provider – "gemini" (default) or "openai"
-TRANSLATION_PROVIDER=gemini
-GEMINI_API_KEY=
+## Run locally on Windows
 
-# Credits configuration
-FREE_MAX_SECONDS=240
-FREE_INITIAL_CREDITS=24
-CREDIT_COST_PER_MINUTE=1
-TRANSLATION_COST_PER_MINUTE=0.5
+Open two PowerShell terminals from the repository root.
 
-# ---------- Frontend ----------
-# URL of the backend API
-NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000
-# Google OAuth client ID (optional for dev you can skip – guest mode works)
-NEXT_PUBLIC_GOOGLE_CLIENT_ID=
-```
+### Backend
 
-## Running tests
 ```powershell
-# Backend tests
 cd backend
-pytest
-# Frontend tests
-cd ../frontend
-npm test
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+# Add provider credentials to backend/.env as needed.
+.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
 ```
 
-## What’s missing / TODO
-- Real payment integration (Razorpay) – stubbed.
-- Production Docker compose (optional, kept for reference).
-- Full unit‑test coverage for all edge cases.
-- Polish UI micro‑animations (basic hover effects are included).
+The API health endpoint is `/health` on the backend address configured for the deployment.
 
----
+### Frontend
 
-Enjoy building subtitles with Padalu! 🎬📝
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+The app runs on the Next.js development server. Set `NEXT_PUBLIC_API_URL` in the frontend environment to the backend address (for local development, `http://localhost:8000`; for Vercel, the public Render service URL).
+
+### Deployment
+
+- Render: create a Docker web service with `backend/Dockerfile`; set the backend environment variables listed in `backend/.env.example`. Set `PORT` through Render, configure `ALLOWED_ORIGINS` with the Vercel site origin, and use `/health` for the health check.
+- Vercel: set the root directory to `frontend`, use `npm run build`, and provide `NEXT_PUBLIC_API_URL` with the public Render service URL. Next.js manages its own output directory.
+
+## Checks
+
+Run these from `frontend/`:
+
+```powershell
+npx tsc --noEmit
+npm test
+npm run lint
+```
+
+Run backend tests from `backend/`:
+
+```powershell
+.venv\Scripts\python -m pytest
+```
+
+## Configuration and secrets
+
+Backend configuration is defined in `backend/app/core/settings.py`; example values live in `backend/.env.example`. Keep credentials in the ignored `backend/.env` file and never commit it. The frontend's shared product metadata is defined in `frontend/lib/brand.ts`.
+
+## Current scope
+
+The frontend supports subtitle generation, timeline and transcript editing, per-word caption preview, style customization, project management, and export flows. The backend provides the corresponding project, cue, authentication, transcription, and export-job APIs. Feature availability depends on local FFmpeg setup and configured provider credentials.

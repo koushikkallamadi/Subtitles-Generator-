@@ -13,7 +13,7 @@ def get_ffmpeg_cmd() -> str:
     return shutil.which(settings.FFMPEG_PATH) or settings.FFMPEG_PATH
 
 def get_ffprobe_cmd() -> str:
-    return shutil.which("ffprobe") or "ffprobe"
+    return shutil.which(settings.FFPROBE_PATH) or settings.FFPROBE_PATH
 
 def get_media_duration(file_path: str) -> float:
     """Get media duration in seconds using ffprobe or ffmpeg fallback."""
@@ -53,7 +53,8 @@ def extract_audio(input_media_path: str, output_path: str = None) -> str:
     Returns the path to the extracted audio file.
     """
     if not output_path:
-        fd, output_path = tempfile.mkstemp(suffix=".mp3")
+        os.makedirs(settings.TEMP_DIR, exist_ok=True)
+        fd, output_path = tempfile.mkstemp(suffix=".mp3", dir=settings.TEMP_DIR)
         os.close(fd)
 
     ffmpeg = get_ffmpeg_cmd()
@@ -94,7 +95,7 @@ def chunk_audio(audio_path: str, chunk_duration_sec: float = 28.0) -> List[Tuple
 
     while current_offset < total_duration:
         chunk_file = os.path.join(
-            tempfile.gettempdir(),
+            settings.TEMP_DIR,
             f"chunk_{os.path.basename(audio_path)}_{chunk_idx}.mp3"
         )
         cmd = [

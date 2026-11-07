@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Black&family=Baloo+2:wght@400;600;700;800&family=Bangers&family=Bebas+Neue&family=Caveat:wght@400;700&family=Lora:ital,wght@0,400;0,700;1,400;1,700&family=League+Spartan:wght@400;500;600;700;800;900&family=Montserrat:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+Devanagari:wght@400;500;700;800&family=Noto+Sans+Tamil:wght@400;500;700;800&family=Noto+Sans+Telugu:wght@400;500;700;800&family=Noto+Sans:wght@400;500;700;800&family=Oswald:wght@400;500;600;700&family=Permanent+Marker&family=Poppins:wght@400;500;700;800&family=TikTok+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Black&family=Baloo+2:wght@400;600;700;800&family=Bangers&family=Bebas+Neue&family=Caveat:wght@400;700&family=Lora:ital,wght@0,400;0,700;1,400;1,700&family=League+Spartan:wght@400;500;600;700;800;900&family=Montserrat:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+Devanagari:wght@400;500;700;800&family=Noto+Sans+Tamil:wght@400;500;700;800&family=Noto+Sans+Telugu:wght@400;500;700;800&family=Noto+Sans:wght@400;500;700;800&family=Oswald:wght@400;500;600;700&family=Permanent+Marker&family=Poppins:wght@400;500;600;700;800&family=TikTok+Sans:wght@400;500;600;700;800&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -12,8 +12,27 @@ html {
 @keyframes captionFade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes captionSlide { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes captionType { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
+@keyframes captionWordRiseGlow {
+  from { opacity: 0; transform: translateY(.42em) scale(var(--caption-word-scale, 1)); filter: blur(var(--caption-word-blur, 12px)); text-shadow: 0 0 0 transparent; }
+  to { opacity: 1; transform: translateY(0) scale(var(--caption-word-scale, 1)); filter: blur(0); text-shadow: var(--caption-glow-end); }
+}
+@keyframes premiumCaptionEnter {
+  from { opacity: 0; transform: scale(.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes premiumCaptionExit { to { opacity: 0; } }
+@keyframes premiumGlowPulseOpacity { from { opacity: .8; } to { opacity: 1.2; } }
+@keyframes premiumGlowPulse {
+  from { text-shadow: var(--premium-glow-from); }
+  to { text-shadow: var(--premium-glow-to); }
+}
 .caption-line { display: flex; width: 100%; align-items: baseline; justify-content: center; white-space: nowrap; }
 .caption-word { display: inline-block; vertical-align: baseline; transform-origin: center center; }
+.premium-caption-exit { animation: premiumCaptionExit ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .caption-word { animation-duration: 1ms !important; }
+  .premium-caption-block, .premium-caption-emphasis, .premium-caption-glow { animation: none !important; }
+}
 
 :root {
   --bg: #FFFFFF;

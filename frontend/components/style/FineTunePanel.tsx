@@ -4,6 +4,7 @@ import type { CaptionStyle } from '../../lib/captionStyle';
 import { PRESET_BY_NAME } from '../../lib/captionPresets';
 import { useVideoStore } from '../../store/videoStore';
 import { SectionHeading } from './PresetGrid';
+import PremiumControls from './PremiumControls';
 
 const inputClass = 'h-9 w-[64px] rounded-lg border border-gray-700 bg-[#202229] px-2 text-sm text-gray-100 outline-none focus:border-[#dc735c]';
 const selectClass = 'h-9 min-w-0 flex-1 rounded-lg border border-gray-700 bg-[#202229] px-2 text-sm text-gray-100 outline-none focus:border-[#dc735c]';
@@ -41,7 +42,7 @@ export default function FineTunePanel({ style }: { style: CaptionStyle }) {
   const resetPreset = PRESET_BY_NAME[selectedPreset] || PRESET_BY_NAME.Highlight;
   return <section className="fine-tune-panel space-y-2">
     <SectionHeading eyebrow="2. FINE-TUNE" title="Customisations" right={<button type="button" onClick={() => useVideoStore.getState().applyCaptionPreset(resetPreset)} className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[#B8501F] hover:bg-[#FDEBDD]"><RotateCcw size={14} />Reset</button>} />
-    <div className="divide-y divide-gray-800/80">
+    {style.premium.enabled ? <PremiumControls config={style.premium} onChange={(premium) => setStyle({ premium })} /> : <div className="divide-y divide-gray-800/80">
       <Row label="Position (%)" info="Caption position as a percent of the video frame."><button type="button" onClick={() => setStyle({ linked: !style.linked })} className={`flex h-8 items-center gap-1 rounded-md px-1.5 text-[11px] ${style.linked ? 'text-gray-300' : 'text-gray-500'}`}><Link2 size={13} />{style.linked ? 'Linked' : 'Unlinked'}</button><NumberInput label="X position (%)" min={0} max={100} step={1} value={style.position.x} onChange={(x) => setStyle({ position: { x } })} /><NumberInput label="Y position (%)" min={0} max={100} step={1} value={style.position.y} onChange={(y) => setStyle({ position: { y } })} /></Row>
       <Row label="Size" info="Caption scale relative to video frame height."><NumberInput label="Size (%)" min={40} max={250} step={5} value={style.scale} unit="%" onChange={(scale) => setStyle({ scale })} /></Row>
       <Row label="Font" info="The font switches to a matching Noto font for Indian scripts when needed."><select aria-label="Font" value={style.fontFamily} onChange={(event) => setStyle({ fontFamily: event.target.value })} className={selectClass}>{fonts.map((font) => <option key={font}>{font}</option>)}</select></Row>
@@ -54,6 +55,6 @@ export default function FineTunePanel({ style }: { style: CaptionStyle }) {
       {style.stroke.enabled && <Row label="Stroke settings" info="Width in pixels at 1080p and stroke colour."><NumberInput label="Stroke width (px at 1080p)" min={0} max={12} step={1} value={style.stroke.widthPx} unit="px" onChange={(widthPx) => setStyle({ stroke: { widthPx } })} /><ColorInput label="Stroke colour" value={style.stroke.color} onChange={(color) => setStyle({ stroke: { color } })} /></Row>}
       <Row label="Background" info="Add a panel behind the captions."><Toggle label="Background" value={style.background.enabled} onChange={(enabled) => setStyle({ background: { enabled } })} /></Row>
       {style.background.enabled && <Row label="Background settings" info="Background colour, opacity, padding and radius scale with the video frame."><ColorInput label="Background colour" value={style.background.color} onChange={(color) => setStyle({ background: { color } })} /><NumberInput label="Background opacity (%)" min={0} max={100} step={5} value={style.background.opacity} unit="%" onChange={(opacity) => setStyle({ background: { opacity } })} /><NumberInput label="Padding (px at 1080p)" min={0} max={40} step={1} value={style.background.paddingPx} unit="px" onChange={(paddingPx) => setStyle({ background: { paddingPx } })} /><NumberInput label="Corner radius (px at 1080p)" min={0} max={40} step={1} value={style.background.radius} unit="px" onChange={(radius) => setStyle({ background: { radius } })} /></Row>}
-    </div>
+    </div>}
   </section>;
 }

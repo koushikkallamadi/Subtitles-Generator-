@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import subprocess
@@ -18,18 +19,24 @@ from app.core.settings import settings
 from app.services.media import get_ffmpeg_cmd, get_ffprobe_cmd
 
 logger = logging.getLogger(__name__)
-STORAGE_ROOT = Path(__file__).resolve().parents[2] / "storage"
-FONTS_DIR = Path(__file__).resolve().parents[2] / "fonts"
+EXPORT_ROOT = Path(settings.EXPORT_DIR)
+TEMP_ROOT = Path(settings.TEMP_DIR)
+FONTS_DIR = Path(settings.FONT_DIR)
 FONTS_USED = ["System", "TikTok Sans", "Anton", "Archivo Black", "Inter", "Oswald", "League Spartan", "Baloo 2", "Poppins", "Montserrat", "Bebas Neue", "Bangers", "Lora", "Caveat", "Noto Sans", "Noto Sans Telugu", "Noto Sans Devanagari", "Noto Sans Tamil"]
 jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
 subtitles_available = False
 _job_controls: dict[str, dict[str, Any]] = {}
 _job_lock = threading.RLock()
+_export_slot = threading.Lock()
 _warmup_thread: threading.Thread | None = None
 _warmup_done = threading.Event()
 _warmup_done.set()
 font_warmup_status = "not_started"
+
+
+class ExportBusy(RuntimeError):
+    pass
 
 
 def check_subtitles_filter() -> bool:
@@ -58,13 +65,13 @@ def check_subtitles_filter() -> bool:
 
 def configure_fontconfig() -> Path:
     """Use a project-local fontconfig cache so a Windows system cache build is not shared/blocked."""
-    root = STORAGE_ROOT / ".fontconfig"
+    root = TEMP_ROOT / ".fontconfig"
     cache = root / "cache"
     root.mkdir(parents=True, exist_ok=True)
     cache.mkdir(parents=True, exist_ok=True)
     dirs = [FONTS_DIR.resolve().as_posix()]
-    windows_fonts = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
-    if windows_fonts.is_dir():
+    windows_fonts = Path(os.environ["WINDIR"]) / "Fonts" if os.environ.get("WINDIR") else None
+    if windows_fonts and windows_fonts.is_dir():
         dirs.append(windows_fonts.resolve().as_posix())
     config = ["<?xml version=\"1.0\"?>", "<!DOCTYPE fontconfig SYSTEM \"fonts.dtd\">", "<fontconfig>"]
     config.extend(f"  <dir>{xml_escape(font_dir)}</dir>" for font_dir in dirs)
@@ -171,7 +178,230 @@ def _font_size(style: dict[str, Any], height: int) -> float:
     return max(1, height * .045 * max(40, min(250, _num(style.get("scale"), 100))) / 100)
 
 
+def _premium_case(word: str, premium: dict[str, Any]) -> str:
+    # Match the browser renderer: casing is for Latin-script tokens only.
+    if not re.fullmatch(r"[A-Za-z\u00C0-\u024F0-9\s.,!?;:'\"()[\]{}\-_/&+%#$@]+", word):
+        return word
+    overrides = {str(value).strip().casefold() for value in premium.get("uppercaseOverride", []) if str(value).strip()}
+    normalized = re.sub(r"^[.,!?;:'\"()[\]{}\-_/&+%#$@]+|[.,!?;:'\"()[\]{}\-_/&+%#$@]+$", "", word).casefold()
+    if normalized in overrides:
+        return word.upper()
+    mode = premium.get("caseTransform", "lowercase")
+    return word.lower() if mode == "lowercase" else word.upper() if mode == "uppercase" else word
+
+
+def _premium_emphasis_index(texts: list[str], premium: dict[str, Any]) -> int:
+    if not texts:
+        return -1
+    strategy = premium.get("emphasisStrategy", "last")
+    if strategy == "custom" and str(premium.get("emphasisWord", "")).strip():
+        target = str(premium["emphasisWord"]).strip(".,!?;:'\"()[]{}-_/&+%#$@").casefold()
+        for index in range(len(texts) - 1, -1, -1):
+            if texts[index].strip(".,!?;:'\"()[]{}-_/&+%#$@").casefold() == target:
+                return index
+    if strategy == "longest":
+        return max(range(len(texts)), key=lambda index: len(texts[index].strip(".,!?;:'\"()[]{}-_/&+%#$@")))
+    return len(texts) - 1
+
+
+def _premium_chunks(words: list[dict[str, Any]], premium: dict[str, Any], available_width: float, support_size: float, emphasis_size: float) -> list[tuple[list[dict[str, Any]], int, int, int]]:
+    maximum = max(1, min(4, int(_num(premium.get("wordsPerChunk", {}).get("max"), 4))))
+    chunks: list[tuple[list[dict[str, Any]], int, int, int]] = []
+    offset = 0
+    while offset < len(words):
+        remaining = len(words) - offset
+        selected: tuple[list[dict[str, Any]], int, int, int] | None = None
+        for size in range(min(maximum, remaining), 1, -1):
+            candidate = words[offset:offset + size]
+            texts = [str(word.get("text", "")) for word in candidate]
+            emphasis = _premium_emphasis_index(texts, premium)
+            support = [_premium_case(word, premium) for index, word in enumerate(texts) if index != emphasis]
+            support_text = " ".join(support)
+            support_scale = _premium_fit_scale(support_text, support_size, available_width)
+            if _premium_estimated_width(support_text, support_size) * support_scale / 100 <= available_width:
+                emphasized = _premium_case(texts[emphasis], premium)
+                emphasis_scale = _premium_fit_scale(emphasized, emphasis_size, available_width)
+                selected = (candidate, emphasis, support_scale, emphasis_scale)
+                break
+        if selected is None:
+            one_word = words[offset:offset + 1]
+            text = _premium_case(str(one_word[0].get("text", "")), premium)
+            selected = (one_word, 0, 100, _premium_fit_scale(text, emphasis_size, available_width))
+        chunks.append(selected)
+        offset += len(selected[0])
+    return chunks
+
+
+def _premium_estimated_width(text: str, font_size: float) -> float:
+    em_width = 0.0
+    for character in text:
+        codepoint = ord(character)
+        if character.isspace():
+            em_width += .28
+        elif 0x0C00 <= codepoint <= 0x0C7F or 0x0900 <= codepoint <= 0x097F or 0x0B80 <= codepoint <= 0x0BFF:
+            em_width += .9
+        elif character.isalnum():
+            em_width += .62 if character.isupper() else .53
+        else:
+            em_width += .32
+    # Track the same -0.02em letter spacing used by the browser renderer.
+    tracking = max(0, len(text) - 1) * .02
+    return max(0, em_width - tracking) * font_size
+
+
+def _premium_fit_scale(text: str, font_size: float, available_width: float) -> int:
+    """Conservative glyph-width estimate for ASS, which has no text-measure API."""
+    # Include the same symmetric 0.5em horizontal clear space used by preview.
+    estimate = _premium_estimated_width(text, font_size) + font_size
+    if estimate <= available_width or not estimate:
+        return 100
+    scale = 100
+    while scale > 55 and estimate * scale / 100 > available_width:
+        scale -= 2
+    return max(55, scale)
+
+
+def _premium_static_band_clip(center_x: float, center_y: float, band_width: float, font_size: float, angle: float) -> str:
+    """Build a static diagonal ASS vector clip, intersected with the text glyphs."""
+    radians = math.radians(angle)
+    half_length = max(font_size * 1.5, band_width * 1.5)
+    half_width = max(0.5, band_width / 2)
+    axis_x, axis_y = math.cos(radians), math.sin(radians)
+    normal_x, normal_y = -axis_y, axis_x
+    points = [
+        (center_x - axis_x * half_length - normal_x * half_width, center_y - axis_y * half_length - normal_y * half_width),
+        (center_x + axis_x * half_length - normal_x * half_width, center_y + axis_y * half_length - normal_y * half_width),
+        (center_x + axis_x * half_length + normal_x * half_width, center_y + axis_y * half_length + normal_y * half_width),
+        (center_x - axis_x * half_length + normal_x * half_width, center_y - axis_y * half_length + normal_y * half_width),
+    ]
+    path = f"m {round(points[0][0])} {round(points[0][1])} l " + " ".join(f"{round(x)} {round(y)}" for x, y in points[1:] + points[:1])
+    return f"\\clip(1,{path})"
+
+
+def _premium_ass(cues: list[dict[str, Any]], style: dict[str, Any], width: int, height: int, timing_offset: float) -> str:
+    premium = style.get("premium") or {}
+    scale = max(1, min(4, _num(premium.get("quality"), 2)))
+    play_width, play_height = round(width * scale), round(height * scale)
+    x = (50 + _num(premium.get("xOffset"), 0)) * play_width / 100
+    y_percent = max(_num(premium.get("verticalSafeZone", {}).get("top"), 8), min(100 - _num(premium.get("verticalSafeZone", {}).get("bottom"), 8), _num(premium.get("positionY"), 65) + _num(premium.get("yOffset"), 0)))
+    y = y_percent * play_height / 100
+    size = play_height * _num(premium.get("fontSizeBase"), 5.5) / 100
+    emphasis_size = size * _num(premium.get("ratioScale"), 1.8)
+    support_weight = _num(premium.get("fontWeight", {}).get("support"), 600)
+    emphasis_weight = _num(premium.get("fontWeight", {}).get("emphasis"), 800)
+    font = str(premium.get("fontFamily") or "Poppins").replace(",", " ")
+    max_width = max(40, min(100, _num(premium.get("maxWidthPercent"), 88)))
+    margin = round(play_width * (100 - max_width) / 200)
+    available_width = play_width * max_width / 100
+    gradient = premium.get("accentGradient") if isinstance(premium.get("accentGradient"), list) and len(premium.get("accentGradient")) == 2 else ["#1F4BFF", "#3FA0FF"]
+    accent = _hex_color(gradient[0] if premium.get("gradientEnabled") else premium.get("accentColor"), "#5638FF")
+    glow = _hex_color(gradient[1] if premium.get("glowLinkedToGradient") and premium.get("gradientEnabled") else premium.get("accentColor") if premium.get("glowLinkedToGradient") else premium.get("glowColor"), accent)
+    text_color = _hex_color(premium.get("textColor"), "#FFFFFF")
+    layers = max(1, min(8, int(_num(premium.get("neonLayers"), 4))))
+    radii = [.006, .016, .035, .07]
+    intensities = [.9, .7, .45, .3]
+    glow_exposure = max(0, min(2, _num(premium.get("glowExposure"), .3)))
+    glow_radius = max(.1, min(3, _num(premium.get("glowRadius"), 1)))
+    drop_shadow = premium.get("dropShadow") or {}
+    shadow_color = _hex_color(drop_shadow.get("color"), "#000000")
+    shadow_opacity = max(0, min(100, _num(drop_shadow.get("opacity"), 60)))
+    line_height = max(.5, min(2, _num(premium.get("lineHeight"), .95)))
+    in_ms = max(0, min(2000, _num(premium.get("inDuration"), 120)))
+    out_ms = max(0, min(2000, _num(premium.get("outDuration"), 80)))
+    align = "\\an5\\q2\\pos({:.0f},{:.0f})\\clip(0,0,{:.0f},{:.0f})".format(x, y, play_width, play_height)
+    header = (
+        "[Script Info]\nScriptType: v4.00+\n" f"PlayResX: {play_width}\nPlayResY: {play_height}\nScaledBorderAndShadow: yes\nWrapStyle: 2\n\n"
+        "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+        f"Style: Default,{font},{size:.2f},{ass_color(text_color)},{ass_color(text_color)},&H00000000,&H00000000,{-1 if support_weight >= 700 else 0},0,1,0,0,2,{margin},{margin},0,1\n\n"
+        "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+    )
+    events: list[str] = []
+    for cue in cues:
+        cue_start = max(0, _num(cue.get("start"), 0) + timing_offset)
+        cue_end = max(cue_start + .03, _num(cue.get("end"), cue_start + .3) + timing_offset)
+        raw_words = cue.get("words_json") or cue.get("words") or []
+        words = [dict(word) for word in raw_words if isinstance(word, dict) and str(word.get("text", "")).strip()] if isinstance(raw_words, list) else []
+        if not words:
+            tokens = [token for token in re.split(r"\s+", str(cue.get("text") or "").strip()) if token]
+            span = cue_end - cue_start
+            words = [{"text": token, "start": cue_start - timing_offset + span * index / len(tokens), "end": cue_start - timing_offset + span * (index + 1) / len(tokens)} for index, token in enumerate(tokens)] if tokens else []
+        for word in words:
+            word["start"] = max(cue_start, _num(word.get("start"), cue_start - timing_offset) + timing_offset)
+            word["end"] = min(cue_end, max(word["start"] + .01, _num(word.get("end"), word["start"] - timing_offset + .1) + timing_offset))
+        for chunk, emphasis, support_fit, emphasis_fit in _premium_chunks(words, premium, available_width, size, emphasis_size):
+            if not chunk:
+                continue
+            chunk_start = max(cue_start, chunk[0]["start"])
+            chunk_end = min(cue_end, max(chunk_start + .03, chunk[-1]["end"]))
+            texts = [str(word.get("text", "")) for word in chunk]
+            support = [word for index, word in enumerate(texts) if index != emphasis]
+            support_plain = " ".join(_premium_case(word, premium) for word in support)
+            emphasis_plain = _premium_case(texts[emphasis], premium)
+            support_text = _escape(support_plain)
+            emphasis_text = _escape(emphasis_plain)
+            initial_scale = 85 if in_ms else 100
+            support_x = max(1, round(support_fit * initial_scale / 100))
+            emphasis_x = max(1, round(emphasis_fit * initial_scale / 100))
+            support_fit_tags = f"\\fscx{support_x}" + (f"\\t(0,{round(in_ms)},\\fscx{support_fit})" if in_ms else f"\\fscx{support_fit}")
+            emphasis_fit_tags = f"\\fscx{emphasis_x}" + (f"\\t(0,{round(in_ms)},\\fscx{emphasis_fit})" if in_ms else f"\\fscx{emphasis_fit}")
+            support_font = _font_fallback(font, " ".join(support)) if support else font
+            emphasis_font = _font_fallback(font, texts[emphasis])
+            bold = "1" if emphasis_weight >= 700 else "0"
+            support_size = size
+            big_size = emphasis_size
+            common = align + "\\fad(" + str(round(in_ms)) + "," + str(round(out_ms)) + ")"
+            # ASS applies transform tags for the entrance while keeping both lines in normal flow.
+            if in_ms:
+                common += f"\\fscx85\\fscy85\\alpha&HFF&\\t(0,{round(in_ms)},\\fscx100\\fscy100\\alpha&H00&)"
+            line2_y = y if not support_text else y + (support_size * line_height + big_size * line_height) / 4
+            glow_common = f"\\an5\\q2\\pos({x:.0f},{line2_y:.0f})\\clip(0,0,{play_width},{play_height})\\fad({round(in_ms)},{round(out_ms)})"
+            if in_ms:
+                glow_common += f"\\fscx85\\fscy85\\alpha&HFF&\\t(0,{round(in_ms)},\\fscx100\\fscy100\\alpha&H00&)"
+            # Soft to broad colored outline layers sit below the solid accent fill.
+            for layer_index in range(min(layers, len(radii)) - 1, -1, -1):
+                blur = max(0, play_height * radii[layer_index] * glow_radius)
+                opacity = max(0, min(100, glow_exposure * intensities[layer_index] * 100))
+                border = max(.5, blur * .45)
+                pulse = ""
+                emphasis_duration = max(0, (chunk[emphasis].get("end", chunk_end) - chunk[emphasis].get("start", chunk_start)) * 1000)
+                if emphasis_duration:
+                    pulse = f"\\t(0,{round(emphasis_duration)},\\blur{blur * 1.2:.2f}\\bord{border * 1.2:.2f})"
+                glow_tags = f"\\fn{emphasis_font}\\fs{big_size:.2f}{emphasis_fit_tags}\\fsp{-big_size * scale * .02:.2f}\\b{bold}\\1a&HFF&\\3c{ass_color(glow, opacity)}\\bord{border:.2f}\\blur{blur:.2f}\\shad0{pulse}"
+                events.append(f"Dialogue: {int(_num(premium.get('zIndex', {}).get('glow'), 0))},{_time(chunk_start)},{_time(chunk_end)},Default,,{margin},{margin},0,,{{{glow_common}{glow_tags}}}{emphasis_text}")
+            stroke = max(0, _num(premium.get("strokeWidth"), 0) * scale)
+            fill = f"{{{common}\\fn{emphasis_font}\\fs{big_size:.2f}{emphasis_fit_tags}\\fsp{-big_size * scale * .02:.2f}\\b{bold}\\1c{ass_color(accent)}\\3a&HFF&\\bord{stroke:.2f}\\3c{ass_color(glow)}\\blur0\\shad0}}{emphasis_text}"
+            if support_text:
+                # Keep the fill on line two while the support line remains smaller and white.
+                support_shadow = f"\\shad{max(0, _num(drop_shadow.get('blur'), 8) * scale):.2f}\\4c{ass_color(shadow_color, shadow_opacity)}\\xshad{_num(drop_shadow.get('x'), 0) * scale:.2f}\\yshad{_num(drop_shadow.get('y'), 2) * scale:.2f}" if drop_shadow.get("enabled", True) else "\\shad0"
+                support_tag = f"{{\\fn{support_font}\\fs{support_size:.2f}{support_fit_tags}\\fsp{-support_size * scale * .02:.2f}\\b{-1 if support_weight >= 600 else 0}\\1c{ass_color(text_color)}{support_shadow}}}{support_text}\\N"
+                fill = f"{{{common}}}{support_tag}{{\\fn{emphasis_font}\\fs{big_size:.2f}{emphasis_fit_tags}\\fsp{-big_size * scale * .02:.2f}\\b{bold}\\1c{ass_color(accent)}\\3a&HFF&\\bord{stroke:.2f}\\3c{ass_color(glow)}\\blur0\\shad0}}{emphasis_text}"
+            events.append(f"Dialogue: {int(_num(premium.get('zIndex', {}).get('fill'), 1))},{_time(chunk_start)},{_time(chunk_end)},Default,,{margin},{margin},0,,{fill}")
+            sweep = premium.get("lightSweep") or {}
+            if sweep.get("enabled", True):
+                emphasis_width = _premium_estimated_width(emphasis_plain, big_size) * emphasis_fit / 100
+                band_center_x = x - emphasis_width / 2 + emphasis_width * max(0, min(100, _num(sweep.get("position"), 55))) / 100
+                band_width = play_width * max(1, _num(sweep.get("width"), 88)) / 1080
+                sweep_angle = _num(sweep.get("angle"), -56)
+                band_clip = _premium_static_band_clip(band_center_x, line2_y, band_width, big_size, sweep_angle + 90)
+                sweep_opacity = max(0, min(100, _num(sweep.get("intensity"), .3) * 100))
+                sweep_align = f"\\an5\\q2\\pos({x:.0f},{line2_y:.0f})\\clip(0,0,{play_width},{play_height})"
+                # This overlay stays fixed for the whole event; it has no fade or transform tags.
+                sweep_text = f"{{{sweep_align}{band_clip}\\fn{emphasis_font}\\fs{big_size:.2f}\\fscx{emphasis_fit}\\fsp{-big_size * scale * .02:.2f}\\b{bold}\\1c&H00FFFFFF\\1a&H{round(255 * (100 - sweep_opacity) / 100):02X}&\\bord0\\blur0\\shad0}}{emphasis_text}"
+                events.append(f"Dialogue: {int(_num(premium.get('zIndex', {}).get('fill'), 1)) + 1},{_time(chunk_start)},{_time(chunk_end)},Default,,{margin},{margin},0,,{sweep_text}")
+                edge_width = max(.5, play_width * 1.5 / 1080)
+                angle_radians = math.radians(sweep_angle)
+                edge_offset = band_width / 2 - edge_width / 2
+                edge_x = band_center_x - math.sin(angle_radians) * edge_offset
+                edge_y = line2_y + math.cos(angle_radians) * edge_offset
+                edge_clip = _premium_static_band_clip(edge_x, edge_y, edge_width, big_size, sweep_angle + 90)
+                edge_text = f"{{{sweep_align}{edge_clip}\\fn{emphasis_font}\\fs{big_size:.2f}\\fscx{emphasis_fit}\\fsp{-big_size * scale * .02:.2f}\\b{bold}\\1c&H00FFFFFF\\1a&H99&\\bord0\\blur0\\shad0}}{emphasis_text}"
+                events.append(f"Dialogue: {int(_num(premium.get('zIndex', {}).get('fill'), 1)) + 2},{_time(chunk_start)},{_time(chunk_end)},Default,,{margin},{margin},0,,{edge_text}")
+    return header + "\n".join(events) + "\n"
+
+
 def build_ass(cues: list[dict[str, Any]], style: dict[str, Any], width: int, height: int, timing_offset: float = 0) -> str:
+    if (style.get("premium") or {}).get("enabled"):
+        return _premium_ass(cues, style, width, height, timing_offset)
     position = style.get("position") or {}
     x = max(0, min(100, _num(position.get("x"), 50))) * width / 100
     y = max(0, min(100, _num(position.get("y"), 86))) * height / 100
@@ -452,11 +682,20 @@ def start_job(project_id: str, kind: str, source: Path, cues: list[dict[str, Any
         for existing_id, job in jobs.items():
             if job.get("project_id") == project_id and job.get("kind") == kind and job.get("status") in {"queued", "running"}:
                 return existing_id, True
+        if not _export_slot.acquire(blocking=False):
+            raise ExportBusy()
         job_id = str(uuid.uuid4())
         jobs[job_id] = {"id": job_id, "project_id": project_id, "kind": kind, "status": "queued", "step": "Queued", "percent": 0, "indeterminate": False, "error": None, "timings": {}, "started_at": time.time()}
         _job_controls[job_id] = {"cancel": threading.Event(), "process": None, "render_started": False}
     thread = threading.Thread(target=_export_worker, args=(job_id, project_id, kind, source, cues, style, offset), daemon=True)
-    thread.start()
+    try:
+        thread.start()
+    except Exception:
+        with _jobs_lock:
+            _job_controls.pop(job_id, None)
+            jobs.pop(job_id, None)
+        _export_slot.release()
+        raise
     return job_id, False
 
 
@@ -477,7 +716,7 @@ def cancel_job(job_id: str) -> dict[str, Any] | None:
 
 
 def _export_worker(job_id: str, project_id: str, kind: str, source: Path, cues: list[dict[str, Any]], style: dict[str, Any], offset: float) -> None:
-    folder = STORAGE_ROOT / project_id
+    folder = EXPORT_ROOT / project_id
     output = folder / f"export_{kind}.mp4"
     ass_path = folder / f"export_{kind}.ass"
     log_path = folder / f"export_{kind}.log"
@@ -505,6 +744,7 @@ def _export_worker(job_id: str, project_id: str, kind: str, source: Path, cues: 
         log_message(f"STEP {name}")
 
     try:
+        folder.mkdir(parents=True, exist_ok=True)
         log_path.write_text(f"Export job {job_id} ({kind})\n", encoding="utf-8")
         update(status="running", step="Preparing fonts", percent=0, indeterminate=False)
         step("Preparing fonts")
@@ -531,11 +771,10 @@ def _export_worker(job_id: str, project_id: str, kind: str, source: Path, cues: 
         update(status="done", step="Done", percent=100 if metadata.get("duration") else None, indeterminate=not bool(metadata.get("duration")), error=None)
     except BaseException as exc:
         logger.exception("Export job %s failed", job_id)
-        if control.get("render_started"):
-            try:
-                output.unlink(missing_ok=True)
-            except OSError:
-                pass
+        try:
+            output.unlink(missing_ok=True)
+        except OSError:
+            pass
         update(status="error", step="Error", error=str(exc))
         try:
             log_message(f"JOB ERROR: {exc}")
@@ -561,6 +800,12 @@ def _export_worker(job_id: str, project_id: str, kind: str, source: Path, cues: 
             logger.exception("Could not finalize export log %s", log_path)
         with _job_lock:
             _job_controls.pop(job_id, None)
+        for temporary in (ass_path, log_path):
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Could not remove temporary export file")
+        _export_slot.release()
 
 
 def get_job(job_id: str) -> dict[str, Any] | None:

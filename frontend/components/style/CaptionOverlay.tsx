@@ -24,9 +24,28 @@ export default function CaptionOverlay({ cue, currentTime, videoRef }: { cue?: C
   const timingOffset = useVideoStore((state) => state.timingOffset);
   const setStyle = useVideoStore((state) => state.setCaptionStyle);
   const [, setFrameRevision] = useState(0);
+  const [displayCue, setDisplayCue] = useState(cue);
+  const [isExiting, setIsExiting] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const pointer = useRef<{ x: number; y: number; startX: number; startY: number; scale: number; mode: 'drag' | 'resize' } | null>(null);
   const bounds = frameBounds(videoRef.current);
+  const premium = style.premium;
+  const cueKey = cue ? `${cue.start}-${cue.end}-${cue.text}` : '';
+  const displayedCueKey = displayCue ? `${displayCue.start}-${displayCue.end}-${displayCue.text}` : '';
+  useEffect(() => {
+    if (cueKey === displayedCueKey) return;
+    if (!premium.enabled || !displayCue) {
+      setDisplayCue(cue);
+      setIsExiting(false);
+      return;
+    }
+    setIsExiting(true);
+    const timeout = window.setTimeout(() => {
+      setDisplayCue(cue);
+      setIsExiting(false);
+    }, premium.outDuration);
+    return () => window.clearTimeout(timeout);
+  }, [cueKey, displayedCueKey, cue, premium.enabled, premium.outDuration, displayCue]);
   useEffect(() => {
     const parent = videoRef.current?.parentElement;
     if (!parent || typeof ResizeObserver === 'undefined') return;
@@ -35,23 +54,30 @@ export default function CaptionOverlay({ cue, currentTime, videoRef }: { cue?: C
     return () => observer.disconnect();
   }, [videoRef]);
   useEffect(() => {
-    if (!cue || !bounds || !containerRef.current) return;
+    if (!cue || !bounds || !containerRef.current || premium.enabled) return;
     const box = containerRef.current.getBoundingClientRect();
     const halfWidth = box.width / 2 / bounds.width * 100;
     const boxHeight = box.height / bounds.height * 100;
     const x = Math.max(halfWidth, Math.min(100 - halfWidth, style.position.x));
     const y = Math.max(boxHeight, Math.min(100, style.position.y));
     if (Math.abs(x - style.position.x) > .01 || Math.abs(y - style.position.y) > .01) setStyle({ position: { x, y } });
-  }, [cue, bounds?.width, bounds?.height, style.position.x, style.position.y, style.scale, setStyle]);
-  if (!cue || !bounds) return null;
-  const timedWords = cue.words?.length === cue.text.split(/\s+/).filter(Boolean).length;
+  }, [cue, bounds?.width, bounds?.height, style.position.x, style.position.y, style.scale, setStyle, premium.enabled]);
+  if ((!displayCue && !cue) || !bounds) return null;
+  const renderedCue = displayCue || cue;
+  if (!renderedCue) return null;
+  const timedWords = renderedCue.words?.length === renderedCue.text.split(/\s+/).filter(Boolean).length;
   const adjustedTime = currentTime - timingOffset;
-  const activeWordIndex = timedWords ? cue.words!.findIndex((word) => adjustedTime >= word.start && adjustedTime < word.end) : -1;
-  const revealedWordIndex = timedWords ? cue.words!.reduce((latest, word, index) => word.start <= adjustedTime ? index : latest, -1) : -1;
-  const position = positionToPixels(style.position, bounds);
+  const activeWordIndex = timedWords ? renderedCue.words!.findIndex((word) => adjustedTime >= word.start && adjustedTime < word.end) : -1;
+  const revealedWordIndex = timedWords ? renderedCue.words!.reduce((latest, word, index) => word.start <= adjustedTime ? index : latest, -1) : -1;
+  const renderPosition = premium.enabled ? {
+    x: Math.max(premium.verticalSafeZone.left, Math.min(100 - premium.verticalSafeZone.right, 50 + premium.xOffset)),
+    y: Math.max(premium.verticalSafeZone.top, Math.min(100 - premium.verticalSafeZone.bottom, premium.positionY + premium.yOffset)),
+  } : style.position;
+  const position = positionToPixels(renderPosition, bounds);
   const begin = (event: ReactPointerEvent<HTMLElement>, mode: 'drag' | 'resize') => {
+    if (mode === 'drag' && !(event.target as HTMLElement).closest('.caption-renderer-content')) return;
     event.preventDefault(); event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId);
-    pointer.current = { x: event.clientX, y: event.clientY, startX: style.position.x, startY: style.position.y, scale: style.scale, mode };
+    pointer.current = { x: event.clientX, y: event.clientY, startX: renderPosition.x, startY: renderPosition.y, scale: premium.enabled ? premium.fontSizeBase : style.scale, mode };
   };
   const move = (event: ReactPointerEvent<HTMLElement>) => {
     const start = pointer.current;
@@ -60,17 +86,24 @@ export default function CaptionOverlay({ cue, currentTime, videoRef }: { cue?: C
       const box = containerRef.current?.getBoundingClientRect();
       const halfWidth = (box?.width || 0) / 2 / bounds.width * 100;
       const boxHeight = (box?.height || 0) / bounds.height * 100;
-      const x = Math.max(halfWidth, Math.min(100 - halfWidth, start.startX + (event.clientX - start.x) / bounds.width * 100));
-      const y = Math.max(boxHeight, Math.min(100, start.startY + (event.clientY - start.y) / bounds.height * 100));
-      setStyle({ position: { x, y } });
+      const marginLeft = premium.enabled ? premium.verticalSafeZone.left : halfWidth;
+      const marginRight = premium.enabled ? premium.verticalSafeZone.right : halfWidth;
+      const marginTop = premium.enabled ? premium.verticalSafeZone.top : boxHeight;
+      const marginBottom = premium.enabled ? premium.verticalSafeZone.bottom : 0;
+      const x = Math.max(marginLeft, Math.min(100 - marginRight, start.startX + (event.clientX - start.x) / bounds.width * 100));
+      const y = Math.max(marginTop, Math.min(100 - marginBottom, start.startY + (event.clientY - start.y) / bounds.height * 100));
+      if (premium.enabled) setStyle({ premium: { xOffset: x - 50, yOffset: y - premium.positionY } });
+      else setStyle({ position: { x, y } });
     } else {
-      setStyle({ scale: Math.max(40, Math.min(250, Math.round(start.scale + (event.clientX - start.x + event.clientY - start.y) * 0.35))) });
+      const nextScale = Math.max(1, Math.min(20, start.scale + (event.clientX - start.x + event.clientY - start.y) * 0.05));
+      if (premium.enabled) setStyle({ premium: { fontSizeBase: nextScale } });
+      else setStyle({ scale: Math.max(40, Math.min(250, Math.round(start.scale + (event.clientX - start.x + event.clientY - start.y) * 0.35))) });
     }
   };
   const end = (event: ReactPointerEvent<HTMLElement>) => { pointer.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); };
-  return <div key={`${cue.start}-${style.animation}`} className="absolute z-10" style={{ left: bounds.left + position.x, top: bounds.top + position.y, transform: 'translate(-50%, -100%)', width: bounds.width, display: 'flex', justifyContent: 'center' }}>
-    <div ref={containerRef} onPointerDown={(event) => begin(event, 'drag')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} className="relative flex max-w-full cursor-move touch-none select-none justify-center rounded-md px-1 py-0.5 text-center shadow-lg">
-      <CaptionRenderer style={style} text={cue.text} words={timedWords ? cue.words : undefined} activeWordIndex={activeWordIndex} revealedWordIndex={revealedWordIndex} containerSize={{ width: bounds.width, height: bounds.height }} />
+  return <div key={`${renderedCue.start}-${style.animation}`} className={`absolute z-10 ${isExiting ? 'premium-caption-exit' : ''}`} style={{ left: bounds.left + position.x, top: bounds.top + position.y, transform: premium.enabled ? 'translate(-50%, -50%)' : 'translate(-50%, -100%)', width: bounds.width, display: 'flex', justifyContent: 'center', animationDuration: isExiting ? `${premium.outDuration}ms` : undefined }}>
+    <div ref={containerRef} onPointerDown={(event) => begin(event, 'drag')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} className="relative flex w-full max-w-full cursor-move touch-none select-none justify-center rounded-md px-1 py-0.5 text-center">
+      <CaptionRenderer className="caption-renderer-content" style={style} text={renderedCue.text} words={timedWords ? renderedCue.words : undefined} activeWordIndex={activeWordIndex} revealedWordIndex={revealedWordIndex} containerSize={{ width: bounds.width, height: bounds.height }} />
       <button type="button" aria-label="Resize captions" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => begin(event, 'resize')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} className="absolute -bottom-2 -right-2 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border border-white bg-[#dc735c] shadow" />
     </div>
   </div>;

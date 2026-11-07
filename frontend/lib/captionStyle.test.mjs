@@ -12,9 +12,20 @@ test('style validation clamps numeric values and rejects invalid animation', () 
 });
 
 test('preset detection uses the complete style config', () => {
-  assert.equal(detectCaptionPreset(CAPTION_PRESETS.find((preset) => preset.name === 'Duo').style), 'Duo');
+  assert.equal(detectCaptionPreset(CAPTION_PRESETS.find((preset) => preset.name === 'Devin Jatho').style), 'Devin Jatho');
   const altered = validateCaptionStyle({ ...CAPTION_PRESETS[0].style, scale: 101 });
   assert.equal(detectCaptionPreset(altered), 'Custom');
+});
+
+test('Premium preset defaults to the editable purple stacked caption config', () => {
+  const preset = CAPTION_PRESETS.find((item) => item.name === 'Premium');
+  assert.ok(preset);
+  assert.equal(preset.style.premium.enabled, true);
+  assert.equal(preset.style.premium.ratioScale, 1.8);
+  assert.equal(preset.style.premium.accentColor, '#5638FF');
+  assert.equal(preset.style.premium.gradientEnabled, false);
+  assert.equal(preset.style.premium.glowColor, '#5B8CFF');
+  assert.equal(preset.style.highlight.enabled, false);
 });
 
 test('position and scale conversions use frame-relative units', () => {
