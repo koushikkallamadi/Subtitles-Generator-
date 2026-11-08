@@ -234,7 +234,7 @@ class SarvamProvider(BaseTranscriptionProvider):
                     if not chunk_txt:
                         continue
                     c_start = (float(starts[i]) if i < len(starts) else 0.0) + time_offset
-                    c_end = (float(ends[i]) if i < len(ends) else c_start + 1.0) + time_offset
+                    c_end = (float(ends[i]) + time_offset) if i < len(ends) else c_start + 1.0
                     chunk_word_objs = self._estimate_word_timings(str(chunk_txt), c_start, c_end, speech_regions)
                     words.extend(chunk_word_objs)
             else:
