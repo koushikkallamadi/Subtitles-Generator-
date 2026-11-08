@@ -25,6 +25,10 @@ function EditorContent() {
   const { user, loading: authLoading, requireLogin, refreshUser } = useAuth();
   const store = useVideoStore();
   const { videoUrl, projectName, duration: storeDuration, cues, timingOffset } = store;
+  const projectId = queryProjectId || store.projectId;
+  const userId = user?.id;
+  const requireLoginRef = useRef(requireLogin);
+  requireLoginRef.current = requireLogin;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -36,11 +40,10 @@ function EditorContent() {
   const saveRevision = useRef(0);
 
   useEffect(() => {
-    const projectId = queryProjectId || useVideoStore.getState().projectId;
     if (authLoading) return;
-    if (projectId && !user) {
+    if (projectId && !userId) {
       setProjectLoading(false);
-      void requireLogin(undefined, `/editor?project=${encodeURIComponent(projectId)}`);
+      void requireLoginRef.current(undefined, `/editor?project=${encodeURIComponent(projectId)}`);
       return;
     }
     if (!projectId) {
@@ -54,8 +57,12 @@ function EditorContent() {
       if (cancelled) return;
       const mappedCues = apiCues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked ?? true, timing_quality: cue.timing_quality ?? "estimated", words: cue.words || cue.words_json || [], manuallyEdited: false }));
       const settings = project.settings_json || {};
+      const currentState = useVideoStore.getState();
+      const localPreviewUrl = currentState.localVideoFile
+        ? (currentState.videoUrl?.startsWith("blob:") ? currentState.videoUrl : URL.createObjectURL(currentState.localVideoFile))
+        : null;
       useVideoStore.setState({
-        projectId: project.id, videoUrl: project.media_available ? `${backendUrl}/media/${project.id}` : null,
+        projectId: project.id, videoUrl: localPreviewUrl || (project.media_available ? `${backendUrl}/media/${project.id}` : null),
         projectName: project.title || project.file_name, fileSize: project.size, duration: project.duration,
         language: project.language, style: project.style, cues: mappedCues, originalCues: mappedCues.map((cue) => ({ ...cue, words: cue.words?.map((word) => ({ ...word })) })),
         captionStyle: validateCaptionStyle(settings.captionStyle || DEFAULT_CAPTION_STYLE),
@@ -64,13 +71,13 @@ function EditorContent() {
       });
       useVideoStore.getState().setProjectMedia(project.media_available, project.audio_available ?? false);
       setDuration(project.duration || 0);
-      setMediaMissing(!project.media_available);
+      setMediaMissing(!project.media_available && !currentState.localVideoFile);
       setProjectLoading(false);
     }).catch((error) => {
       if (!cancelled) { setLoadError(error instanceof Error ? error.message : "Could not load project."); setProjectLoading(false); }
     });
     return () => { cancelled = true; };
-  }, [router, queryProjectId, authLoading, user, requireLogin]);
+  }, [router, projectId, authLoading, userId]);
 
   useEffect(() => {
     if (projectLoading || !store.projectId) return;

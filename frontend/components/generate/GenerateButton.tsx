@@ -11,7 +11,7 @@ import { captureAudioFromVideo } from "../../lib/audioCapture";
 import { postFormWithProgress } from "../../lib/uploadRequest";
 
 export default function GenerateButton() {
-  const { videoUrl, localVideoFile, projectMediaAvailable, projectAudioAvailable, projectName, language, style, duration, projectId, setCues, setAudioPreparation, setTransferProgress, audioPreparation, audioPreparationProgress, transferProgress } = useVideoStore();
+  const { videoUrl, localVideoFile, projectMediaAvailable, projectAudioAvailable, projectName, language, style, duration, projectId, setCues, setAudioPreparation, setTransferProgress, audioPreparation, audioPreparationProgress, audioPreparationMessage, transferProgress } = useVideoStore();
   const { refreshUser } = useAuth();
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -54,19 +54,17 @@ export default function GenerateButton() {
           if (!localVideoFile) throw new Error("Pick the original video again before generating subtitles.");
           setAudioPreparation("extracting", 0);
           audioWasPrepared = true;
-          try {
-            const captured = await captureAudioFromVideo(localVideoFile, ({ progress: value }) => setAudioPreparation("extracting", value));
-            formData.append("file", captured.file, captured.file.name);
-            uploadAudio = true;
-          } catch {
-            console.warn("Local audio extraction was unavailable; uploading the original video instead.");
-            formData.append("file", localVideoFile, localVideoFile.name);
-          }
+          const captured = await captureAudioFromVideo(localVideoFile, ({ progress: value }) => setAudioPreparation("extracting", value));
+          formData.append("file", captured.file, captured.file.name);
+          uploadAudio = true;
         }
       } else {
         if (!localVideoFile) throw new Error("The local video file is no longer available. Please select it again.");
-        setProgress(20);
-        formData.append("file", localVideoFile, projectName || "video.mp4");
+        setAudioPreparation("extracting", 0);
+        audioWasPrepared = true;
+        const captured = await captureAudioFromVideo(localVideoFile, ({ progress: value }) => setAudioPreparation("extracting", value));
+        formData.append("file", captured.file, captured.file.name);
+        uploadAudio = true;
       }
 
       setProgress(35);
@@ -182,6 +180,7 @@ export default function GenerateButton() {
 
   return (
     <div className="relative flex flex-col gap-2 pt-2">
+      {audioPreparationMessage && <p className="rounded-lg border border-[#D65A26]/30 bg-[#D65A26]/10 px-3 py-2 text-xs text-gray-200" role="status" aria-live="polite">{audioPreparationMessage}</p>}
       {(audioPreparation === "extracting" || audioPreparation === "uploading" || audioPreparation === "uploading-video") && <div className="rounded-xl border border-[#D65A26]/30 bg-[#D65A26]/10 p-3 text-xs text-gray-200" role="status" aria-live="polite">
         <div className="flex justify-between gap-3"><span>{audioPreparation === "extracting" ? "Extracting audio on this device" : audioPreparation === "uploading-video" ? "Uploading original video" : "Uploading compact audio"}</span><span>{audioPreparationProgress}%</span></div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#D65A26] transition-[width]" style={{ width: `${audioPreparationProgress}%` }} /></div>

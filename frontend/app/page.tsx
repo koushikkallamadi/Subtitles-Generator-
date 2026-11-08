@@ -7,8 +7,8 @@ import TopBar from "../components/TopBar";
 import { Button, DottedLines, Highlight } from "../components/brand/BrandUI";
 import { BRAND } from "../lib/brand";
 import { useAuth } from "../components/AuthProvider";
-import { backendUrl, createAudioProject, fetchProjects, uploadProject } from "../lib/projects";
-import { captureAudioFromVideo } from "../lib/audioCapture";
+import { fetchProjects } from "../lib/projects";
+import { createProjectFromLocalFile } from "../lib/localProject";
 import { useVideoStore } from "../store/videoStore";
 import TransferProgress from "../components/TransferProgress";
 import type { TransferProgress as TransferProgressData } from "../lib/uploadRequest";
@@ -42,45 +42,34 @@ export default function HomePage() {
     const localUrl = URL.createObjectURL(file);
     state.setVideoData(localUrl, file.name, file.size, 0);
     state.setLocalVideoFile(file);
+    state.setAudioPreparationMessage("");
     state.setAudioPreparation("extracting", 0);
     router.push("/editor");
 
     try {
-      const captured = await captureAudioFromVideo(file, ({ progress }) => useVideoStore.getState().setAudioPreparation("extracting", progress));
-      useVideoStore.getState().setAudioPreparation("uploading", 0);
-      const project = await createAudioProject(file, captured.file, useVideoStore.getState().language, useVideoStore.getState().style, (progress) => {
-        setTransferProgress(progress);
-        useVideoStore.getState().setTransferProgress(progress);
-        useVideoStore.getState().setAudioPreparation("uploading", progress.percent);
-      });
-      const latest = useVideoStore.getState();
-      latest.setProjectId(project.id);
+      const initial = useVideoStore.getState();
+      const project = await createProjectFromLocalFile(file, initial.language, initial.style, (stage, progress, transfer) => {
+        const isVideoUpload = stage === "uploading-video";
+        useVideoStore.getState().setAudioPreparation(stage === "uploading-audio" ? "uploading" : isVideoUpload ? "uploading-video" : "extracting", progress);
+        if (transfer) {
+          setTransferProgress(transfer);
+          useVideoStore.getState().setTransferProgress(transfer);
+        }
+      }, () => useVideoStore.getState().setAudioPreparationMessage("Audio extraction failed, uploading the video instead."));
+      const current = useVideoStore.getState();
+      current.setProjectId(project.id);
       useVideoStore.setState({ duration: project.duration });
-      latest.setProjectMedia(project.media_available, project.audio_available ?? true);
-      latest.setLanguage(project.language);
-      latest.setStyle(project.style);
-      latest.setTransferProgress(null);
-      latest.setAudioPreparation("ready", 100);
-    } catch (audioFirstError) {
-      try {
-        const latest = useVideoStore.getState();
-        latest.setAudioPreparation("uploading-video", 0);
-        const project = await uploadProject(file, latest.language, latest.style, (progress) => {
-          setTransferProgress(progress);
-          useVideoStore.getState().setTransferProgress(progress);
-          useVideoStore.getState().setAudioPreparation("uploading-video", progress.percent);
-        });
-        latest.setVideoData(`${backendUrl}/media/${project.id}`, project.title, project.size, project.duration);
-        latest.setLocalVideoFile(file);
-        latest.setProjectId(project.id);
-        latest.setProjectMedia(project.media_available, project.audio_available ?? false);
-        latest.setAudioPreparation("ready", 100);
-        latest.setTransferProgress(null);
-      } catch (fallbackError) {
-        const message = fallbackError instanceof Error ? fallbackError.message : (audioFirstError instanceof Error ? audioFirstError.message : "Could not prepare this video.");
-        useVideoStore.getState().setAudioPreparation("failed", 0);
-        setUploadError(message);
-      }
+      current.setProjectMedia(project.media_available, project.audio_available ?? true);
+      current.setLanguage(project.language);
+      current.setStyle(project.style);
+      current.setTransferProgress(null);
+      current.setAudioPreparationMessage(project.media_available && !project.audio_available ? "Video uploaded as fallback because audio extraction failed." : "");
+      current.setAudioPreparation("ready", 100);
+    } catch (preparationError) {
+      const message = preparationError instanceof Error ? preparationError.message : "Could not prepare this video.";
+      useVideoStore.getState().setAudioPreparation("failed", 0);
+      useVideoStore.getState().setAudioPreparationMessage(message);
+      setUploadError(message);
     } finally {
       setUploading(false);
       setTransferProgress(null);

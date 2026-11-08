@@ -70,6 +70,7 @@ export default function ExportCards() {
   }, [exportJobs, startedAt]);
   const runExport = async (kind: 'video' | 'greenscreen') => {
     if (!projectId) { setExportErrors((current) => ({ ...current, [kind]: 'Save or upload this video as a project before exporting.' })); return; }
+    if (!projectMediaAvailable && !localVideoFile) { setExportErrors((current) => ({ ...current, [kind]: 'The local video is no longer available. Pick it again to export this project.' })); return; }
     setExportErrors((current) => ({ ...current, [kind]: '' }));
     setStartedAt((current) => ({ ...current, [kind]: Date.now() }));
     setExportJobs((current) => ({ ...current, [kind]: { job_id: '', status: 'queued', step: 'Starting export', percent: 0 } }));

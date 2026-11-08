@@ -21,7 +21,7 @@ export type { CaptionStyle } from '../lib/captionStyle';
 export const DEFAULT_CAPTION_STYLE = PRESET_BY_NAME.Premium || DEFAULT_STYLE;
 
 type VideoState = {
-  videoUrl: string | null; localVideoFile: File | null; projectMediaAvailable: boolean; projectAudioAvailable: boolean; audioPreparation: 'idle' | 'extracting' | 'uploading' | 'uploading-video' | 'ready' | 'failed'; audioPreparationProgress: number; transferProgress: { loaded: number; total: number; percent: number; bytesPerSecond: number; secondsRemaining: number | null; waking: boolean } | null; cues: Cue[]; projectName: string; fileSize: number; duration: number; language: string;
+  videoUrl: string | null; localVideoFile: File | null; projectMediaAvailable: boolean; projectAudioAvailable: boolean; audioPreparation: 'idle' | 'extracting' | 'uploading' | 'uploading-video' | 'ready' | 'failed'; audioPreparationProgress: number; audioPreparationMessage: string; transferProgress: { loaded: number; total: number; percent: number; bytesPerSecond: number; secondsRemaining: number | null; waking: boolean } | null; cues: Cue[]; projectName: string; fileSize: number; duration: number; language: string;
   projectId: string | null; savingState: 'saved' | 'unsaved' | 'saving' | 'error';
   maxWordsPerLine: number; maxLinesPerSubtitle: number; originalCues: Cue[]; style: string; timingOffset: number;
   captionStyle: CaptionStyle;
@@ -29,7 +29,7 @@ type VideoState = {
   selectedCueIndex: number | null;
   undoCueHistory: Cue[][]; redoCueHistory: Cue[][];
   setVideoData: (url: string, name: string, size: number, dur: number) => void;
-  setLocalVideoFile: (file: File | null) => void; setProjectMedia: (mediaAvailable: boolean, audioAvailable: boolean) => void; setAudioPreparation: (status: VideoState['audioPreparation'], progress?: number) => void; setTransferProgress: (progress: VideoState['transferProgress']) => void;
+  setLocalVideoFile: (file: File | null) => void; setProjectMedia: (mediaAvailable: boolean, audioAvailable: boolean) => void; setAudioPreparation: (status: VideoState['audioPreparation'], progress?: number) => void; setAudioPreparationMessage: (message: string) => void; setTransferProgress: (progress: VideoState['transferProgress']) => void;
   setProjectId: (id: string | null) => void; setSavingState: (state: 'saved' | 'unsaved' | 'saving' | 'error') => void;
   setCues: (cues: Partial<Cue>[]) => void; setLinked: (index: number, linked: boolean) => void;
   setCueTimingState: (cues: Cue[]) => void; recordCueUndo: (before: Cue[]) => void; undoCueTiming: () => void; redoCueTiming: () => void;
@@ -67,12 +67,13 @@ function segment(words: WordTimestamp[], maxWords: number, lines: number): Cue[]
 }
 
 export const useVideoStore = create<VideoState>()(persist((set) => ({
-  videoUrl: null, localVideoFile: null, projectMediaAvailable: false, projectAudioAvailable: false, audioPreparation: 'idle', audioPreparationProgress: 0, transferProgress: null, cues: [], projectName: '', fileSize: 0, duration: 0, language: 'Hindi', projectId: null, savingState: 'saved',
+  videoUrl: null, localVideoFile: null, projectMediaAvailable: false, projectAudioAvailable: false, audioPreparation: 'idle', audioPreparationProgress: 0, audioPreparationMessage: '', transferProgress: null, cues: [], projectName: '', fileSize: 0, duration: 0, language: 'Hindi', projectId: null, savingState: 'saved',
   style: 'roman', timingOffset: 0, captionStyle: DEFAULT_CAPTION_STYLE, selectedCaptionPreset: 'Premium', maxWordsPerLine: 2, maxLinesPerSubtitle: 2, originalCues: [], selectedCueIndex: null, undoCueHistory: [], redoCueHistory: [],
-  setVideoData: (url, name, size, dur) => set({ videoUrl: url, localVideoFile: null, projectMediaAvailable: false, projectAudioAvailable: false, audioPreparation: 'idle', audioPreparationProgress: 0, projectName: name, fileSize: size, duration: dur, cues: [], originalCues: [], projectId: null, savingState: 'saved' }),
+  setVideoData: (url, name, size, dur) => set({ videoUrl: url, localVideoFile: null, projectMediaAvailable: false, projectAudioAvailable: false, audioPreparation: 'idle', audioPreparationProgress: 0, audioPreparationMessage: '', projectName: name, fileSize: size, duration: dur, cues: [], originalCues: [], projectId: null, savingState: 'saved' }),
   setLocalVideoFile: (localVideoFile) => set({ localVideoFile }),
   setProjectMedia: (projectMediaAvailable, projectAudioAvailable) => set({ projectMediaAvailable, projectAudioAvailable }),
   setAudioPreparation: (audioPreparation, audioPreparationProgress = 0) => set({ audioPreparation, audioPreparationProgress: Math.max(0, Math.min(100, audioPreparationProgress)) }),
+  setAudioPreparationMessage: (audioPreparationMessage) => set({ audioPreparationMessage }),
   setTransferProgress: (transferProgress) => set({ transferProgress }),
   setProjectId: (projectId) => set({ projectId }), setSavingState: (savingState) => set({ savingState }),
   setCues: (items) => set((state) => {
@@ -143,8 +144,8 @@ export const useVideoStore = create<VideoState>()(persist((set) => ({
   resegmentCues: (maxWordsPerLine, maxLinesPerSubtitle) => set((state) => ({
     cues: segment(state.cues.flatMap(wordsForCue), maxWordsPerLine, maxLinesPerSubtitle), maxWordsPerLine, maxLinesPerSubtitle, selectedCueIndex: null,
   })),
-  clearVideo: () => set({ videoUrl: null, localVideoFile: null, projectMediaAvailable: false, projectAudioAvailable: false, audioPreparation: 'idle', audioPreparationProgress: 0, transferProgress: null, cues: [], originalCues: [], projectName: '', fileSize: 0, duration: 0, language: 'Hindi', style: 'roman', timingOffset: 0, captionStyle: DEFAULT_CAPTION_STYLE, selectedCaptionPreset: 'Premium', selectedCueIndex: null, projectId: null, savingState: 'saved' }),
-}), { name: 'video-store', partialize: ({ videoUrl, localVideoFile, audioPreparation, audioPreparationProgress, transferProgress, undoCueHistory, redoCueHistory, ...rest }) => {
+  clearVideo: () => set({ videoUrl: null, localVideoFile: null, projectMediaAvailable: false, projectAudioAvailable: false, audioPreparation: 'idle', audioPreparationProgress: 0, audioPreparationMessage: '', transferProgress: null, cues: [], originalCues: [], projectName: '', fileSize: 0, duration: 0, language: 'Hindi', style: 'roman', timingOffset: 0, captionStyle: DEFAULT_CAPTION_STYLE, selectedCaptionPreset: 'Premium', selectedCueIndex: null, projectId: null, savingState: 'saved' }),
+}), { name: 'video-store', partialize: ({ videoUrl, localVideoFile, audioPreparation, audioPreparationProgress, audioPreparationMessage, transferProgress, undoCueHistory, redoCueHistory, ...rest }) => {
   if (videoUrl?.startsWith('blob:')) return rest;
   return { ...rest, videoUrl };
 }, merge: (persisted, current) => {
