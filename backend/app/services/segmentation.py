@@ -1,3 +1,4 @@
+import math
 import re
 from typing import List, Dict, Any
 from app.services.transcription.base import WordTimestamp, Segment, TranscriptionResult
@@ -108,3 +109,50 @@ def cues_from_transcription(result: TranscriptionResult) -> List[Dict[str, Any]]
             "words": [],
         }]
     return []
+
+
+def clamp_cues_to_duration(cues: List[Dict[str, Any]], duration: float) -> List[Dict[str, Any]]:
+    """Clamp cue and word intervals to the media, dropping cues with no playable start."""
+    if not math.isfinite(duration) or duration <= 0:
+        return []
+
+    bounded: List[Dict[str, Any]] = []
+    for cue in cues:
+        try:
+            raw_start = float(cue.get("start", 0.0))
+            raw_end = float(cue.get("end", raw_start))
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(raw_start) or not math.isfinite(raw_end) or raw_start >= duration:
+            continue
+
+        start = max(0.0, min(duration, raw_start))
+        end = max(0.0, min(duration, raw_end))
+        if end - start < 0.1:
+            if duration >= 0.1:
+                end = min(duration, start + 0.1)
+                start = max(0.0, end - 0.1)
+            else:
+                start, end = 0.0, duration
+        if end <= start:
+            continue
+
+        clamped = {**cue, "start": start, "end": end}
+        words_key = "words" if isinstance(cue.get("words"), list) else "words_json"
+        raw_words = cue.get(words_key)
+        if isinstance(raw_words, list):
+            words = []
+            for word in raw_words:
+                if not isinstance(word, dict):
+                    continue
+                try:
+                    word_start = max(start, min(end, duration, float(word.get("start", start))))
+                    word_end = max(start, min(end, duration, float(word.get("end", word_start))))
+                except (TypeError, ValueError):
+                    continue
+                if not math.isfinite(word_start) or not math.isfinite(word_end) or word_end <= word_start:
+                    continue
+                words.append({**word, "start": word_start, "end": word_end})
+            clamped[words_key] = words
+        bounded.append(clamped)
+    return bounded

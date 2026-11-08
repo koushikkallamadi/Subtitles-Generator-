@@ -634,6 +634,7 @@ class SarvamProvider(BaseTranscriptionProvider):
                 route_used="Sarvam (Batch API)",
                 timestamps_estimated=timestamps_estimated,
                 timing_quality=timing_quality,
+                timing_chunk_ranges=[(0.0, total_duration)],
             )
 
         except Exception as e:
@@ -680,6 +681,7 @@ class SarvamProvider(BaseTranscriptionProvider):
                 all_text_parts = []
                 all_words: List[WordTimestamp] = []
                 all_segments: List[Segment] = []
+                chunk_ranges: List[Tuple[float, float]] = []
                 any_estimated = False
                 timing_quality = "aligned"
 
@@ -694,6 +696,8 @@ class SarvamProvider(BaseTranscriptionProvider):
                             all_text_parts.append(txt)
                         all_words.extend(words)
                         all_segments.extend(segments)
+                        if segments:
+                            chunk_ranges.append((segments[0].start, segments[0].end))
                         if est:
                             any_estimated = True
                         if chunk_quality != "aligned":
@@ -713,6 +717,7 @@ class SarvamProvider(BaseTranscriptionProvider):
                     route_used="Sarvam (Chunked REST)",
                     timestamps_estimated=any_estimated,
                     timing_quality=timing_quality,
+                    timing_chunk_ranges=chunk_ranges,
                 )
             else:
                 txt, words, segments, est, timing_quality = await self._transcribe_sync_chunk(
@@ -731,6 +736,7 @@ class SarvamProvider(BaseTranscriptionProvider):
                     route_used="Sarvam (Synchronous REST)",
                     timestamps_estimated=est,
                     timing_quality=timing_quality,
+                    timing_chunk_ranges=[(0.0, duration)],
                 )
         finally:
             if temp_extracted and os.path.exists(temp_extracted) and temp_extracted != audio_path:

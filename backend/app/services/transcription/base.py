@@ -25,6 +25,7 @@ class TranscriptionResult(BaseModel):
     route_used: Optional[str] = None
     timestamps_estimated: bool = False
     timing_quality: str = "aligned"
+    timing_chunk_ranges: List[tuple[float, float]] = Field(default_factory=list)
 
 class BaseTranscriptionProvider(ABC):
     @property

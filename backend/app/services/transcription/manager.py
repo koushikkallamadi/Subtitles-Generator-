@@ -67,6 +67,8 @@ class TranscriptionManager:
                     language=language,
                     style=style,
                 )
+                if not result.route_used:
+                    result.route_used = provider_name.title()
 
                 if idx > 0:
                     # A fallback occurred!

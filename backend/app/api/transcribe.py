@@ -3,6 +3,7 @@ import tempfile
 import logging
 import asyncio
 import math
+import os
 import time
 from datetime import datetime
 from typing import Optional
@@ -14,7 +15,7 @@ from app.services.jobs import job_store, JobState
 from app.services.media import extract_audio
 from app.services.media import get_media_duration
 from app.services.transcription.manager import transcription_manager
-from app.services.segmentation import cues_from_transcription
+from app.services.segmentation import clamp_cues_to_duration, cues_from_transcription
 from app.api.projects import project_media_path, project_transcription_audio_path
 from app.db import SessionLocal
 from app.models import Cue, Project
@@ -114,6 +115,7 @@ async def process_transcription_job(
             requested_provider=provider,
         )
         logger.info("transcription stage=provider seconds=%.3f audio_bytes=%d", time.perf_counter() - stage_started, audio_bytes)
+        media_duration = await loop.run_in_executor(None, get_media_duration, temp_audio_path)
         if result.provider == "none" and user_id:
             _refund_credits(user_id, reserved_credits)
             reserved_credits = 0.0
@@ -122,7 +124,20 @@ async def process_transcription_job(
         # Segment words into subtitle cues
         logger.info(f"Job {job_id}: Generating subtitle cues...")
         stage_started = time.perf_counter()
-        cues = cues_from_transcription(result)
+        cues = clamp_cues_to_duration(cues_from_transcription(result), media_duration)
+        if os.getenv("TIMING_DEBUG") == "1":
+            chunk_ranges = result.timing_chunk_ranges or [(0.0, media_duration)]
+            first_word = result.words[0] if result.words else None
+            last_word = result.words[-1] if result.words else None
+            logger.info(
+                "TIMING_DEBUG job=%s provider_path=%s chunks=%s first_word=%s last_word=%s media_duration=%.3f",
+                job_id,
+                result.route_used or result.provider,
+                [(round(start, 3), round(end, 3)) for start, end in chunk_ranges],
+                (round(first_word.start, 3), round(first_word.end, 3)) if first_word else None,
+                (round(last_word.start, 3), round(last_word.end, 3)) if last_word else None,
+                media_duration,
+            )
         if project_id:
             with SessionLocal() as db:
                 project = db.get(Project, project_id)
