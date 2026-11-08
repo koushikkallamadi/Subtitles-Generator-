@@ -12,7 +12,7 @@ sys.path.insert(0, str(BACKEND_ROOT))
 # Export probing does not need application configuration or media binaries.
 # Stub those imports so these unit tests never load backend/.env.
 settings_module = types.ModuleType("app.core.settings")
-settings_module.settings = object()
+settings_module.settings = types.SimpleNamespace(EXPORT_DIR=str(BACKEND_ROOT / "test-data" / "exports"), TEMP_DIR=str(BACKEND_ROOT / "test-data" / "tmp"), FONT_DIR=str(BACKEND_ROOT / "fonts"), EXPORT_MAX_HEIGHT=0, EXPORT_PRESET="ultrafast", EXPORT_CRF=18)
 sys.modules.setdefault("app.core.settings", settings_module)
 media_module = types.ModuleType("app.services.media")
 media_module.get_ffmpeg_cmd = lambda: "ffmpeg"

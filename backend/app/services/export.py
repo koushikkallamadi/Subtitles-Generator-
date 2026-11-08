@@ -29,6 +29,7 @@ subtitles_available = False
 _job_controls: dict[str, dict[str, Any]] = {}
 _job_lock = threading.RLock()
 _export_slot = threading.Lock()
+_temporary_sources: dict[str, Path] = {}
 _warmup_thread: threading.Thread | None = None
 _warmup_done = threading.Event()
 _warmup_done.set()
@@ -541,21 +542,27 @@ def build_ass(cues: list[dict[str, Any]], style: dict[str, Any], width: int, hei
 
 
 def probe_video(path: Path) -> dict[str, Any]:
-    result = subprocess.run([get_ffprobe_cmd(), "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,avg_frame_rate,r_frame_rate,duration:format=duration", "-of", "json", str(path)], capture_output=True, text=True, check=True)
+    result = subprocess.run([get_ffprobe_cmd(), "-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,duration:format=duration", "-of", "json", str(path)], capture_output=True, text=True, check=True)
     data = json.loads(result.stdout)
     streams = data.get("streams") or []
     format_duration = _num(data.get("format", {}).get("duration"), 0)
-    if not streams:
-        # Audio-only media has no video stream to index. The green-screen
-        # export uses these dimensions, and the full-video export uses them
-        # for its black caption canvas.
-        return {"width": 1920, "height": 1080, "fps": "30/1", "duration": format_duration if format_duration > 0 else None, "has_video": False}
-    stream = streams[0]
-    duration = _num(stream.get("duration"), format_duration)
-    fps = stream.get("avg_frame_rate") or stream.get("r_frame_rate") or "30/1"
+    video_stream = next((item for item in streams if item.get("codec_type") == "video"), None)
+    if video_stream is None:
+        video_stream = next((item for item in streams if "width" in item and "height" in item), None)
+    audio_stream = next((item for item in streams if item.get("codec_type") == "audio"), {})
+    if video_stream is None:
+        metadata = {"width": 1920, "height": 1080, "fps": "30/1", "duration": format_duration if format_duration > 0 else None, "has_video": False}
+        if audio_stream.get("codec_name"):
+            metadata["audio_codec"] = audio_stream["codec_name"]
+        return metadata
+    duration = _num(video_stream.get("duration"), format_duration)
+    fps = video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate") or "30/1"
     if fps in ("0/0", "0/1"):
-        fps = stream.get("r_frame_rate") or "30/1"
-    return {"width": int(stream["width"]), "height": int(stream["height"]), "fps": fps, "duration": duration if duration > 0 else None, "has_video": True}
+        fps = video_stream.get("r_frame_rate") or "30/1"
+    metadata = {"width": int(video_stream["width"]), "height": int(video_stream["height"]), "fps": fps, "duration": duration if duration > 0 else None, "has_video": True}
+    if audio_stream.get("codec_name"):
+        metadata["audio_codec"] = audio_stream["codec_name"]
+    return metadata
 
 
 def _filter_path(path: Path) -> str:
@@ -568,22 +575,44 @@ class ExportFailure(RuntimeError):
     pass
 
 
+def _available_cpu_count() -> int:
+    try:
+        quota_text = Path("/sys/fs/cgroup/cpu.max").read_text(encoding="ascii").split()
+        if quota_text[0] != "max":
+            quota = int(quota_text[0])
+            period = int(quota_text[1])
+            return max(1, (quota + period - 1) // period)
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except (AttributeError, OSError):
+        return max(1, os.cpu_count() or 1)
+
+
 def _run_ffmpeg(job_id: str, kind: str, source: Path, output: Path, ass_path: Path, metadata: dict[str, Any], log_path: Path, deadline: float, set_progress) -> None:
     fonts_arg = f":fontsdir={_filter_path(FONTS_DIR)}"
-    vf = f"subtitles=filename={_filter_path(ass_path)}{fonts_arg}"
+    max_height = max(0, int(settings.EXPORT_MAX_HEIGHT or 0))
+    scale_filter = f"scale=-2:min(ih\\,{max_height})," if max_height > 0 else ""
+    vf = f"{scale_filter}subtitles=filename={_filter_path(ass_path)}{fonts_arg}"
+    export_preset = str(settings.EXPORT_PRESET or "veryfast").strip()
+    export_crf = max(0, min(51, int(settings.EXPORT_CRF if settings.EXPORT_CRF is not None else 18)))
+    video_encoder = ["-c:v", "libx264", "-preset", export_preset, "-crf", str(export_crf), "-threads", str(_available_cpu_count()), "-pix_fmt", "yuv420p"]
+    audio_codec = str(metadata.get("audio_codec") or "").lower()
+    audio_encoder = ["-c:a", "copy"] if audio_codec in {"aac", "mp3", "ac3", "eac3", "alac"} else ["-c:a", "aac", "-b:a", "192k"]
     if kind == "video":
         if metadata.get("has_video", True):
-            command = [get_ffmpeg_cmd(), "-hide_banner", "-y", "-i", str(source), "-vf", vf, "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output)]
+            command = [get_ffmpeg_cmd(), "-hide_banner", "-y", "-i", str(source), "-vf", vf, "-map", "0:v:0", "-map", "0:a?", *video_encoder, *audio_encoder, "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output)]
         else:
             duration = metadata.get("duration")
             if not duration:
                 raise ExportFailure("Audio duration is unknown; cannot create the caption video")
-            command = [get_ffmpeg_cmd(), "-hide_banner", "-y", "-f", "lavfi", "-i", f"color=c=black:s={metadata['width']}x{metadata['height']}:r={metadata['fps']}:d={duration:.6f}", "-i", str(source), "-vf", vf, "-t", f"{duration:.6f}", "-map", "0:v:0", "-map", "1:a?", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output)]
+            command = [get_ffmpeg_cmd(), "-hide_banner", "-y", "-f", "lavfi", "-i", f"color=c=black:s={metadata['width']}x{metadata['height']}:r={metadata['fps']}:d={duration:.6f}", "-i", str(source), "-vf", vf, "-t", f"{duration:.6f}", "-map", "0:v:0", "-map", "1:a?", *video_encoder, *audio_encoder, "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output)]
     else:
         duration = metadata["duration"]
         if not duration:
             raise ExportFailure("Video duration is unknown; cannot create the green-screen export source")
-        command = [get_ffmpeg_cmd(), "-hide_banner", "-y", "-f", "lavfi", "-i", f"color=c=0x00FF00:s={metadata['width']}x{metadata['height']}:r={metadata['fps']}:d={duration:.6f}", "-vf", vf, "-t", f"{duration:.6f}", "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output)]
+        command = [get_ffmpeg_cmd(), "-hide_banner", "-y", "-f", "lavfi", "-i", f"color=c=0x00FF00:s={metadata['width']}x{metadata['height']}:r={metadata['fps']}:d={duration:.6f}", "-vf", vf, "-t", f"{duration:.6f}", "-an", *video_encoder, "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output)]
 
     control = _job_controls[job_id]
     stderr_tail: deque[str] = deque(maxlen=15)
@@ -620,14 +649,17 @@ def _run_ffmpeg(job_id: str, kind: str, source: Path, output: Path, ass_path: Pa
                     continue
                 now = time.monotonic()
                 with progress_lock:
-                    if seconds > latest_progress[0] + .001:
+                    previous_seconds, previous_time = latest_progress
+                    media_speed = (seconds - previous_seconds) / max(.001, now - previous_time)
+                    if seconds > previous_seconds + .001:
                         latest_progress[:] = [seconds, now]
                 duration = metadata.get("duration")
                 if duration and duration > 0:
                     percent = min(99, max(0, round(seconds / duration * 100)))
-                    set_progress(percent, False)
+                    remaining = max(0, round((duration - seconds) / media_speed)) if media_speed > .01 else None
+                    set_progress(percent, False, remaining)
                 else:
-                    set_progress(None, True)
+                    set_progress(None, True, None)
 
         def read_stderr() -> None:
             assert process.stderr is not None
@@ -738,7 +770,11 @@ def _export_worker(job_id: str, project_id: str, kind: str, source: Path, cues: 
         now = time.monotonic()
         previous_name, previous_start = active_step
         if previous_name:
-            step_timings[previous_name] = step_timings.get(previous_name, 0) + now - previous_start
+            elapsed = now - previous_start
+            step_timings[previous_name] = step_timings.get(previous_name, 0) + elapsed
+            source_bytes = source.stat().st_size if source.is_file() else 0
+            output_bytes = output.stat().st_size if output.is_file() else 0
+            logger.info("export stage=%s seconds=%.3f input_bytes=%d output_bytes=%d", previous_name.lower().replace(" ", "_"), elapsed, source_bytes, output_bytes)
         active_step[:] = [name, now]
         update(step=name, timings=dict(step_timings))
         log_message(f"STEP {name}")
@@ -746,6 +782,7 @@ def _export_worker(job_id: str, project_id: str, kind: str, source: Path, cues: 
     try:
         folder.mkdir(parents=True, exist_ok=True)
         log_path.write_text(f"Export job {job_id} ({kind})\n", encoding="utf-8")
+        logger.info("export stage=queued input_bytes=%d cues=%d", source.stat().st_size if source.is_file() else 0, len(cues))
         update(status="running", step="Preparing fonts", percent=0, indeterminate=False)
         step("Preparing fonts")
         while not _warmup_done.wait(.5):
@@ -764,11 +801,12 @@ def _export_worker(job_id: str, project_id: str, kind: str, source: Path, cues: 
         step("Building captions")
         ass_path.write_text(build_ass(cues, style, metadata["width"], metadata["height"], offset), encoding="utf-8-sig")
         step("Rendering green-screen video" if kind == "greenscreen" else "Burning captions into video")
-        _run_ffmpeg(job_id, kind, source, output, ass_path, metadata, log_path, deadline, lambda percent, indeterminate: update(percent=percent, indeterminate=indeterminate))
+        _run_ffmpeg(job_id, kind, source, output, ass_path, metadata, log_path, deadline, lambda percent, indeterminate, remaining: update(percent=percent, indeterminate=indeterminate, remaining_seconds=remaining))
         step("Finalizing export")
         if not output.is_file() or output.stat().st_size <= 0:
             raise ExportFailure("Export finished but the output file is missing or empty")
         update(status="done", step="Done", percent=100 if metadata.get("duration") else None, indeterminate=not bool(metadata.get("duration")), error=None)
+        logger.info("export stage=complete seconds=%.3f input_bytes=%d output_bytes=%d", time.monotonic() - started, source.stat().st_size if source.is_file() else 0, output.stat().st_size if output.is_file() else 0)
     except BaseException as exc:
         logger.exception("Export job %s failed", job_id)
         try:
@@ -794,6 +832,9 @@ def _export_worker(job_id: str, project_id: str, kind: str, source: Path, cues: 
             if job.get("status") not in {"done", "error"}:
                 job.update(status="error", step="Error", error="Export ended unexpectedly before reaching a terminal state")
             job["timings"] = dict(step_timings)
+            job_failed = job.get("status") != "done"
+        if job_failed:
+            cleanup_temporary_source(job_id)
         try:
             log_message(f"STEP TIMINGS {json.dumps(step_timings, sort_keys=True)}")
         except OSError:
@@ -812,3 +853,20 @@ def get_job(job_id: str) -> dict[str, Any] | None:
     with _jobs_lock:
         job = jobs.get(job_id)
         return dict(job) if job else None
+
+
+def register_temporary_source(job_id: str, source: Path) -> None:
+    _temporary_sources[job_id] = source
+
+
+def cleanup_temporary_source(job_id: str) -> None:
+    source = _temporary_sources.pop(job_id, None)
+    if source:
+        source.unlink(missing_ok=True)
+
+
+def cleanup_temporary_source_for_export(project_id: str, kind: str) -> None:
+    with _jobs_lock:
+        matches = [job_id for job_id, job in jobs.items() if job.get("project_id") == project_id and job.get("kind") == kind and job.get("status") == "done"]
+    for job_id in matches:
+        cleanup_temporary_source(job_id)

@@ -1,3 +1,5 @@
+import { postFormWithProgress, type TransferProgress } from './uploadRequest';
+
 export type ProjectRecord = {
   id: string;
   title: string;
@@ -10,10 +12,11 @@ export type ProjectRecord = {
   created_at: string;
   updated_at: string;
   media_available: boolean;
+  audio_available?: boolean;
 };
 
 export type ApiCue = { idx?: number; start: number; end: number; text: string; linked?: boolean; timing_quality?: "aligned" | "estimated"; words?: { text: string; start: number; end: number }[]; words_json?: { text: string; start: number; end: number }[] };
-export type ExportJob = { job_id: string; id?: string; status: 'queued' | 'running' | 'done' | 'error'; step: string; percent: number | null; indeterminate?: boolean; error?: string | null; timings?: Record<string, number> };
+export type ExportJob = { job_id: string; id?: string; status: 'queued' | 'running' | 'done' | 'error'; step: string; percent: number | null; indeterminate?: boolean; remaining_seconds?: number | null; error?: string | null; timings?: Record<string, number> };
 
 const configuredBackendUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
 if (!configuredBackendUrl && process.env.NODE_ENV === 'production') {
@@ -32,12 +35,33 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function uploadProject(file: File, language: string, style: string) {
+export function uploadProject(file: File, language: string, style: string, onProgress?: (progress: TransferProgress) => void) {
   const body = new FormData();
   body.append('file', file, file.name);
   body.append('language', language);
   body.append('style', style);
-  return apiRequest<ProjectRecord>('/projects', { method: 'POST', body });
+  return onProgress
+    ? postFormWithProgress<ProjectRecord>(`${backendUrl}/projects`, body, onProgress)
+    : apiRequest<ProjectRecord>('/projects', { method: 'POST', body });
+}
+
+export function createAudioProject(video: File, audio: File, language: string, style: string, onProgress: (progress: TransferProgress) => void) {
+  const body = new FormData();
+  body.append('audio', audio, audio.name);
+  body.append('title', video.name.replace(/\.[^.]+$/, ''));
+  body.append('file_name', video.name);
+  body.append('original_size', String(video.size));
+  body.append('language', language);
+  body.append('style', style);
+  return postFormWithProgress<ProjectRecord>(`${backendUrl}/projects/audio-first`, body, onProgress);
+}
+
+export function startProjectExportWithVideo(id: string, kind: 'video' | 'greenscreen', style: unknown, timingOffset: number, video: File, onProgress: (progress: TransferProgress) => void) {
+  const body = new FormData();
+  body.append('file', video, video.name);
+  body.append('style_json', JSON.stringify(style));
+  body.append('timing_offset', String(timingOffset));
+  return postFormWithProgress<ExportJob>(`${backendUrl}/projects/${encodeURIComponent(id)}/export/${kind}/upload`, body, onProgress);
 }
 
 export function fetchProject(id: string) { return apiRequest<ProjectRecord>(`/projects/${encodeURIComponent(id)}`); }

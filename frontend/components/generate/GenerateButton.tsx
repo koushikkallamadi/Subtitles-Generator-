@@ -6,9 +6,12 @@ import { useVideoStore } from "../../store/videoStore";
 import { BRAND } from "../../lib/brand";
 import { backendUrl } from "../../lib/projects";
 import { useAuth } from "../../components/AuthProvider";
+import TransferProgress from "../TransferProgress";
+import { captureAudioFromVideo } from "../../lib/audioCapture";
+import { postFormWithProgress } from "../../lib/uploadRequest";
 
 export default function GenerateButton() {
-  const { videoUrl, projectName, language, style, duration, projectId, setCues } = useVideoStore();
+  const { videoUrl, localVideoFile, projectMediaAvailable, projectAudioAvailable, projectName, language, style, duration, projectId, setCues, setAudioPreparation, setTransferProgress, audioPreparation, audioPreparationProgress, transferProgress } = useVideoStore();
   const { refreshUser } = useAuth();
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -20,15 +23,21 @@ export default function GenerateButton() {
     setToast({ message, type });
     setTimeout(() => {
       setToast(null);
+
     }, 6000);
   };
 
   const handleGenerate = async () => {
     if (isGenerating) return;
+    if (audioPreparation === "extracting" || audioPreparation === "uploading" || audioPreparation === "uploading-video") {
+      showToast("Preparing the audio for subtitles. You can start generating as soon as it is ready.", "info");
+      return;
+    }
     console.log("Generate Subtitles clicked:", { language, style, projectName });
     setIsGenerating(true);
     setProgress(10);
     setToast(null);
+    let audioWasPrepared = false;
 
     try {
       if (!videoUrl) {
@@ -36,38 +45,48 @@ export default function GenerateButton() {
       }
 
       const formData = new FormData();
-      if (projectId) {
-        formData.append("project_id", projectId);
-      } else {
-        setProgress(20);
-        const mediaResponse = await fetch(videoUrl, { credentials: "include" });
-        const blob = await mediaResponse.blob();
-        formData.append("file", blob, projectName || "video.mp4");
-      }
       formData.append("language", language);
       formData.append("style", style);
-
-      // Submit transcription job
-      setProgress(35);
-      const postRes = await fetch(`${backendUrl}/api/transcribe`, {
-        method: "POST",
-        credentials: "include",
-        body: formData,
-      });
-
-      if (!postRes.ok) {
-        let message = `Server returned error ${postRes.status}.`;
-        try {
-          const payload = await postRes.json();
-          if (typeof payload.detail === "string") message = payload.detail;
-        } catch {
-          // Keep the status message when the server doesn't return JSON.
+      let uploadAudio = false;
+      if (projectId) {
+        formData.append("project_id", projectId);
+        if (!projectMediaAvailable && !projectAudioAvailable) {
+          if (!localVideoFile) throw new Error("Pick the original video again before generating subtitles.");
+          setAudioPreparation("extracting", 0);
+          audioWasPrepared = true;
+          try {
+            const captured = await captureAudioFromVideo(localVideoFile, ({ progress: value }) => setAudioPreparation("extracting", value));
+            formData.append("file", captured.file, captured.file.name);
+            uploadAudio = true;
+          } catch {
+            console.warn("Local audio extraction was unavailable; uploading the original video instead.");
+            formData.append("file", localVideoFile, localVideoFile.name);
+          }
         }
-        showToast(message, postRes.status === 402 ? "warning" : "error");
-        return;
+      } else {
+        if (!localVideoFile) throw new Error("The local video file is no longer available. Please select it again.");
+        setProgress(20);
+        formData.append("file", localVideoFile, projectName || "video.mp4");
       }
 
-      const postData = await postRes.json();
+      setProgress(35);
+      const uploadsFile = formData.get("file") instanceof File;
+      setAudioPreparation(uploadAudio ? "uploading" : uploadsFile ? "uploading-video" : audioPreparation, uploadsFile ? 0 : audioPreparationProgress);
+      const postData = uploadsFile
+        ? await postFormWithProgress<{ job_id: string }>(`${backendUrl}/api/transcribe`, formData, (value) => {
+            setTransferProgress(value);
+            setAudioPreparation(uploadAudio ? "uploading" : "uploading-video", value.percent);
+          })
+        : await (async () => {
+            const response = await fetch(`${backendUrl}/api/transcribe`, { method: "POST", credentials: "include", body: formData });
+            if (!response.ok) {
+              let message = `Server returned error ${response.status}.`;
+              try { const payload = await response.json(); if (typeof payload.detail === "string") message = payload.detail; } catch { /* Keep status message. */ }
+              throw Object.assign(new Error(message), { status: response.status });
+            }
+            return response.json();
+          })();
+      setTransferProgress(null);
       const jobId = postData.job_id;
       await refreshUser();
 
@@ -152,6 +171,10 @@ export default function GenerateButton() {
         { start: 4.0, end: 7.2, text: "AI Subtitles generated with live sync" },
       ]);
     } finally {
+      if (audioWasPrepared) {
+        setAudioPreparation("ready", 100);
+        setTransferProgress(null);
+      }
       setIsGenerating(false);
       setProgress(0);
     }
@@ -159,6 +182,11 @@ export default function GenerateButton() {
 
   return (
     <div className="relative flex flex-col gap-2 pt-2">
+      {(audioPreparation === "extracting" || audioPreparation === "uploading" || audioPreparation === "uploading-video") && <div className="rounded-xl border border-[#D65A26]/30 bg-[#D65A26]/10 p-3 text-xs text-gray-200" role="status" aria-live="polite">
+        <div className="flex justify-between gap-3"><span>{audioPreparation === "extracting" ? "Extracting audio on this device" : audioPreparation === "uploading-video" ? "Uploading original video" : "Uploading compact audio"}</span><span>{audioPreparationProgress}%</span></div>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#D65A26] transition-[width]" style={{ width: `${audioPreparationProgress}%` }} /></div>
+        {transferProgress && <TransferProgress progress={transferProgress} label={audioPreparation === "uploading-video" ? "Uploading video" : "Uploading audio"} />}
+      </div>}
       {/* Friendly Toast Notification */}
       {toast && (
         <div

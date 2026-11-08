@@ -11,7 +11,7 @@ import TransportBar from "../../components/TransportBar";
 import Timeline from "../../components/Timeline";
 import TranscriptTab from "../../components/TranscriptTab";
 import CaptionOverlay from "../../components/style/CaptionOverlay";
-import { backendUrl, fetchProject, fetchProjectCues, patchProject, saveProjectCues, uploadProject } from "../../lib/projects";
+import { backendUrl, fetchProject, fetchProjectCues, patchProject, saveProjectCues } from "../../lib/projects";
 import { useAuth } from "../../components/AuthProvider";
 import { DottedLines } from "../../components/brand/BrandUI";
 
@@ -33,7 +33,6 @@ function EditorContent() {
   const [projectLoading, setProjectLoading] = useState(true);
   const [mediaMissing, setMediaMissing] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [reuploading, setReuploading] = useState(false);
   const saveRevision = useRef(0);
 
   useEffect(() => {
@@ -63,6 +62,7 @@ function EditorContent() {
         selectedCaptionPreset: detectCaptionPreset(validateCaptionStyle(settings.captionStyle || DEFAULT_CAPTION_STYLE)),
         timingOffset: Math.max(-1, Math.min(1, Number(settings.timingOffset ?? 0))), maxWordsPerLine: Number(settings.maxWordsPerLine ?? 2), maxLinesPerSubtitle: Number(settings.maxLinesPerSubtitle ?? 2), savingState: "saved",
       });
+      useVideoStore.getState().setProjectMedia(project.media_available, project.audio_available ?? false);
       setDuration(project.duration || 0);
       setMediaMissing(!project.media_available);
       setProjectLoading(false);
@@ -173,20 +173,16 @@ useEffect(() => {
 
   const recoverMissingMedia = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; if (!file) return;
-    setReuploading(true); setLoadError("");
-    try {
-      const project = await uploadProject(file, store.language, store.style);
-      useVideoStore.setState({ projectId: project.id, videoUrl: `${backendUrl}/media/${project.id}`, projectName: project.title, fileSize: project.size, duration: project.duration, savingState: "saved" });
-      await saveProjectCues(project.id, store.cues.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text, linked: cue.linked, timing_quality: cue.timing_quality, words: cue.words || [] })));
-      await patchProject(project.id, { settings_json: { timingOffset: store.timingOffset, maxWordsPerLine: store.maxWordsPerLine, maxLinesPerSubtitle: store.maxLinesPerSubtitle, captionStyle: store.captionStyle } });
-      router.replace(`/editor?project=${encodeURIComponent(project.id)}`);
-      setMediaMissing(false);
-    } catch (error) { setLoadError(error instanceof Error ? error.message : "Could not upload the replacement video."); }
-    finally { setReuploading(false); }
+    setLoadError("");
+    if (store.videoUrl?.startsWith("blob:")) URL.revokeObjectURL(store.videoUrl);
+    const localUrl = URL.createObjectURL(file);
+    useVideoStore.setState({ videoUrl: localUrl, localVideoFile: file, fileSize: file.size, projectName: file.name });
+    setMediaMissing(false);
+    event.currentTarget.value = "";
   };
 
   if (projectLoading) return <div className="marketing-theme grid h-screen place-items-center text-sm text-muted">Loading project…</div>;
-  if (mediaMissing) return <div className="marketing-theme flex h-screen flex-col"><TopBar theme="editor" projectName={projectName} savingState={store.savingState} /><main className="m-auto w-full max-w-lg rounded-2xl border border-[var(--border)] bg-white p-8 text-center shadow-lg"><h1 className="text-lg font-semibold text-ink">This video is no longer stored</h1><p className="mt-2 text-sm text-muted">Your project and subtitles are still available. Pick the video again to restore playback.</p><label className="brand-button brand-button-primary mt-5 inline-flex cursor-pointer">{reuploading ? "Uploading…" : "Pick your video again"}<input type="file" accept="video/*" className="hidden" disabled={reuploading} onChange={(event) => void recoverMissingMedia(event)} /></label>{loadError && <p role="alert" className="mt-3 text-sm text-red-700">{loadError}</p>}</main></div>;
+  if (mediaMissing) return <div className="marketing-theme flex h-screen flex-col"><TopBar theme="editor" projectName={projectName} savingState={store.savingState} /><main className="m-auto w-full max-w-lg rounded-2xl border border-[var(--border)] bg-white p-8 text-center shadow-lg"><h1 className="text-lg font-semibold text-ink">Your video is on this device</h1><p className="mt-2 text-sm text-muted">Your saved subtitles are ready. Pick the video again to preview it; it stays local until you export.</p><label className="brand-button brand-button-primary mt-5 inline-flex cursor-pointer">Pick your video<input type="file" accept="video/*" className="hidden" onChange={(event) => void recoverMissingMedia(event)} /></label>{loadError && <p role="alert" className="mt-3 text-sm text-red-700">{loadError}</p>}</main></div>;
   if (loadError && !videoUrl) return <div className="marketing-theme grid h-screen place-items-center text-sm text-red-700">{loadError}</div>;
   if (!videoUrl) {
     return null;

@@ -1,6 +1,10 @@
 import mimetypes
 import re
 import shutil
+import logging
+import time
+import json
+import tempfile
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -21,6 +25,7 @@ from app.services import export as export_service
 from app.services.export import get_job, start_job
 
 router = APIRouter(tags=["projects"])
+logger = logging.getLogger(__name__)
 UPLOAD_ROOT = Path(settings.UPLOAD_DIR)
 EXPORT_ROOT = Path(settings.EXPORT_DIR)
 TEMP_ROOT = Path(settings.TEMP_DIR)
@@ -67,6 +72,13 @@ def project_media_path(project_id: str) -> Path | None:
     return next((path for path in folder.glob("original.*") if path.is_file()), None)
 
 
+def project_transcription_audio_path(project_id: str) -> Path | None:
+    folder = UPLOAD_ROOT / project_id
+    if not folder.is_dir():
+        return None
+    return next((path for path in folder.glob("transcription_audio.*") if path.is_file()), None)
+
+
 def project_dict(project: Project) -> dict[str, Any]:
     return {
         "id": project.id, "title": project.title, "file_name": project.file_name,
@@ -74,6 +86,7 @@ def project_dict(project: Project) -> dict[str, Any]:
         "style": project.style, "settings_json": project.settings_json or {},
         "created_at": project.created_at.isoformat(), "updated_at": project.updated_at.isoformat(),
         "media_available": project_media_path(project.id) is not None,
+        "audio_available": project_transcription_audio_path(project.id) is not None,
     }
 
 
@@ -85,6 +98,8 @@ async def create_project(
     style: str = Form("roman"),
     user: User = Depends(get_current_user),
 ):
+    request_started = time.perf_counter()
+    stage_started = request_started
     original_name = Path(file.filename or "video.mp4").name
     suffix = Path(original_name).suffix.lower()
     if not re.fullmatch(r"\.[a-z0-9]{1,10}", suffix):
@@ -99,9 +114,13 @@ async def create_project(
             while chunk := await file.read(1024 * 1024):
                 size += len(chunk)
                 if size > settings.MAX_UPLOAD_MB * 1024 * 1024:
-                    raise HTTPException(status_code=413, detail=f"Upload exceeds the {settings.MAX_UPLOAD_MB} MB limit")
+                    raise HTTPException(status_code=413, detail=f"Upload exceeds the {settings.MAX_UPLOAD_MB} MB limit. Raise MAX_UPLOAD_MB (for example, 500) to allow full-quality video exports.")
                 target.write(chunk)
+        copy_seconds = time.perf_counter() - stage_started
+        logger.info("upload stage=store_original seconds=%.3f bytes=%d", copy_seconds, size)
+        stage_started = time.perf_counter()
         duration = get_media_duration(str(destination))
+        logger.info("upload stage=probe_duration seconds=%.3f bytes=%d", time.perf_counter() - stage_started, size)
         if duration > settings.MAX_VIDEO_SECONDS:
             raise HTTPException(status_code=413, detail=f"Videos must be {settings.MAX_VIDEO_SECONDS} seconds or shorter on the free plan")
         project = Project(
@@ -109,15 +128,73 @@ async def create_project(
             size=size, duration=duration, language=language[:64], style=style[:32], settings_json={}, user_id=user.id,
         )
         with SessionLocal() as db:
+            stage_started = time.perf_counter()
             db.add(project)
             db.commit()
             db.refresh(project)
+            logger.info("upload stage=save_project seconds=%.3f bytes=%d", time.perf_counter() - stage_started, size)
+            logger.info("upload stage=complete seconds=%.3f bytes=%d media_seconds=%.3f", time.perf_counter() - request_started, size, duration)
             return project_dict(project)
     except Exception:
         shutil.rmtree(folder, ignore_errors=True)
         raise
     finally:
         await file.close()
+
+
+@router.post("/projects/audio-first")
+async def create_audio_first_project(
+    audio: UploadFile = File(...),
+    title: str = Form("Untitled project"),
+    file_name: str = Form("video.mp4"),
+    original_size: int = Form(0),
+    language: str = Form("Hindi"),
+    style: str = Form("roman"),
+    user: User = Depends(get_current_user),
+):
+    request_started = time.perf_counter()
+    audio_name = Path(audio.filename or "audio.webm").name
+    suffix = Path(audio_name).suffix.lower()
+    if suffix not in {".mp3", ".m4a", ".mp4", ".webm", ".ogg", ".wav", ".aac", ".flac", ".opus"}:
+        suffix = ".webm"
+    project_id = str(uuid.uuid4())
+    folder = UPLOAD_ROOT / project_id
+    folder.mkdir(parents=True, exist_ok=False)
+    destination = folder / f"transcription_audio{suffix}"
+    size = 0
+    try:
+        with destination.open("wb") as target:
+            while chunk := await audio.read(1024 * 1024):
+                size += len(chunk)
+                if size > settings.MAX_UPLOAD_MB * 1024 * 1024:
+                    raise HTTPException(status_code=413, detail=f"Audio exceeds the {settings.MAX_UPLOAD_MB} MB limit")
+                target.write(chunk)
+        logger.info("upload stage=store_transcription_audio seconds=%.3f bytes=%d", time.perf_counter() - request_started, size)
+        probe_started = time.perf_counter()
+        duration = get_media_duration(str(destination))
+        logger.info("upload stage=probe_audio_duration seconds=%.3f bytes=%d", time.perf_counter() - probe_started, size)
+        if duration <= 0:
+            raise HTTPException(status_code=422, detail="Could not read the extracted audio duration")
+        if duration > settings.MAX_VIDEO_SECONDS:
+            raise HTTPException(status_code=413, detail=f"Videos must be {settings.MAX_VIDEO_SECONDS} seconds or shorter on the free plan")
+        project = Project(
+            id=project_id, title=(title or "Untitled project")[:255], file_name=Path(file_name).name[:255],
+            size=max(0, min(int(original_size or 0), 2_147_483_647)), duration=duration,
+            language=language[:64], style=style[:32], settings_json={}, user_id=user.id,
+        )
+        with SessionLocal() as db:
+            save_started = time.perf_counter()
+            db.add(project)
+            db.commit()
+            db.refresh(project)
+            logger.info("upload stage=save_audio_project seconds=%.3f audio_bytes=%d", time.perf_counter() - save_started, size)
+            logger.info("upload stage=audio_project_complete seconds=%.3f audio_bytes=%d media_seconds=%.3f", time.perf_counter() - request_started, size, duration)
+            return project_dict(project)
+    except Exception:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
+    finally:
+        await audio.close()
 
 
 @router.get("/projects")
@@ -188,6 +265,74 @@ def start_project_export(project_id: str, kind: str, payload: ExportRequest | No
     return {"job_id": job_id, "status": job.get("status", "queued"), "step": job.get("step", "Queued"), "percent": job.get("percent", 0), "indeterminate": job.get("indeterminate", False), "existing": existing}
 
 
+@router.post("/projects/{project_id}/export/{kind}/upload")
+async def start_project_export_with_upload(
+    project_id: str,
+    kind: str,
+    file: UploadFile = File(...),
+    style_json: str = Form("{}"),
+    timing_offset: float = Form(0),
+    user: User = Depends(get_current_user),
+):
+    if kind not in {"video", "greenscreen"}:
+        raise HTTPException(status_code=422, detail="Export kind must be 'video' or 'greenscreen'")
+    if not export_service.subtitles_available:
+        raise HTTPException(status_code=503, detail="FFmpeg subtitles filter/libass is unavailable")
+    try:
+        style = json.loads(style_json)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="Export style is invalid")
+    if not isinstance(style, dict):
+        raise HTTPException(status_code=422, detail="Export style must be an object")
+
+    with SessionLocal() as db:
+        project = owned_project(db, project_id, user)
+        cues = db.scalars(select(Cue).where(Cue.project_id == project_id).order_by(Cue.idx)).all()
+        if not cues:
+            raise HTTPException(status_code=409, detail="Add or generate at least one subtitle cue before exporting")
+        cue_data = [{"start": cue.start, "end": cue.end, "text": cue.text, "words_json": cue.words_json or []} for cue in cues]
+
+    TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+    suffix = Path(file.filename or "video.mp4").suffix.lower()
+    if suffix not in {".mp4", ".mov", ".mkv", ".webm", ".avi"}:
+        suffix = ".mp4"
+    source: Path | None = None
+    upload_started = time.perf_counter()
+    size = 0
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="export-source-", dir=TEMP_ROOT) as target:
+            source = Path(target.name)
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > settings.MAX_UPLOAD_MB * 1024 * 1024:
+                    raise HTTPException(status_code=413, detail=f"Upload exceeds the {settings.MAX_UPLOAD_MB} MB limit. Raise MAX_UPLOAD_MB (for example, 500) to allow full-quality video exports.")
+                target.write(chunk)
+        logger.info("export_upload stage=receive_video seconds=%.3f bytes=%d", time.perf_counter() - upload_started, size)
+        probe_started = time.perf_counter()
+        duration = get_media_duration(str(source))
+        logger.info("export_upload stage=probe_video seconds=%.3f bytes=%d", time.perf_counter() - probe_started, size)
+        if duration <= 0:
+            raise HTTPException(status_code=422, detail="Could not read the video duration")
+        if duration > settings.MAX_VIDEO_SECONDS:
+            raise HTTPException(status_code=413, detail=f"Videos must be {settings.MAX_VIDEO_SECONDS} seconds or shorter on the free plan")
+        job_id, existing = start_job(project_id, kind, source, cue_data, style, float(timing_offset or 0))
+        if existing:
+            source.unlink(missing_ok=True)
+        else:
+            export_service.register_temporary_source(job_id, source)
+            if (get_job(job_id) or {}).get("status") == "error":
+                export_service.cleanup_temporary_source(job_id)
+        logger.info("export_upload stage=queued seconds=%.3f bytes=%d video_seconds=%.3f", time.perf_counter() - upload_started, size, duration)
+        job = get_job(job_id) or {}
+        return {"job_id": job_id, "status": job.get("status", "queued"), "step": job.get("step", "Queued"), "percent": job.get("percent", 0), "indeterminate": job.get("indeterminate", False), "existing": existing}
+    except Exception:
+        if source:
+            source.unlink(missing_ok=True)
+        raise
+    finally:
+        await file.close()
+
+
 @router.post("/projects/{project_id}/export-feedback")
 def submit_export_feedback(project_id: str, payload: ExportFeedbackRequest, user: User = Depends(get_current_user)):
     with SessionLocal() as db:
@@ -256,6 +401,7 @@ def download_project_export(project_id: str, kind: str, user: User = Depends(get
     from fastapi import BackgroundTasks as ResponseBackgroundTasks
     cleanup = ResponseBackgroundTasks()
     cleanup.add_task(path.unlink, missing_ok=True)
+    cleanup.add_task(export_service.cleanup_temporary_source_for_export, project_id, kind)
     return StreamingResponse(stream_export(), media_type="video/mp4", headers={"Content-Disposition": f'attachment; filename="export_{kind}.mp4"'}, background=cleanup)
 
 

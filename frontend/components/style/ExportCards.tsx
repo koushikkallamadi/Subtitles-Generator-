@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, Clock3, Download, FileText, Film, LoaderCircle, Send, Star, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { useVideoStore } from '../../store/videoStore';
 import { SectionHeading } from './PresetGrid';
-import { backendUrl, cancelExportJob, fetchExportJob, startProjectExport, submitExportFeedback, type ExportJob, type ExportFeedback } from '../../lib/projects';
+import { backendUrl, cancelExportJob, fetchExportJob, startProjectExport, startProjectExportWithVideo, submitExportFeedback, type ExportJob, type ExportFeedback } from '../../lib/projects';
 import { breakCaptionLines } from '../../lib/captionLines';
 import { scaleToFontPixels } from '../../lib/captionStyle';
+import TransferProgress from '../TransferProgress';
+import type { TransferProgress as TransferProgressData } from '../../lib/uploadRequest';
 
 function stamp(seconds: number, separator: ',' | '.') {
   const total = Math.max(0, Math.round((seconds + useVideoStore.getState().timingOffset) * 1000));
@@ -25,6 +27,11 @@ function download(format: 'srt' | 'vtt') {
 
 export default function ExportCards() {
   const projectId = useVideoStore((state) => state.projectId);
+  const localVideoFile = useVideoStore((state) => state.localVideoFile);
+  const projectMediaAvailable = useVideoStore((state) => state.projectMediaAvailable);
+  const setTransferProgress = useVideoStore((state) => state.setTransferProgress);
+  const [uploadingKind, setUploadingKind] = useState<'video' | 'greenscreen' | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<TransferProgressData | null>(null);
   const captionStyle = useVideoStore((state) => state.captionStyle);
   const timingOffset = useVideoStore((state) => state.timingOffset);
   const [exportJobs, setExportJobs] = useState<Record<string, ExportJob | null>>({});
@@ -67,9 +74,24 @@ export default function ExportCards() {
     setStartedAt((current) => ({ ...current, [kind]: Date.now() }));
     setExportJobs((current) => ({ ...current, [kind]: { job_id: '', status: 'queued', step: 'Starting export', percent: 0 } }));
     try {
-      const job = await startProjectExport(projectId, kind, captionStyle, timingOffset);
+      let job: ExportJob;
+      if (!projectMediaAvailable && localVideoFile) {
+        setUploadingKind(kind);
+        job = await startProjectExportWithVideo(projectId, kind, captionStyle, timingOffset, localVideoFile, (progress) => {
+          setUploadProgress(progress);
+          setTransferProgress(progress);
+        });
+      } else {
+        job = await startProjectExport(projectId, kind, captionStyle, timingOffset);
+      }
+      setUploadingKind(null);
+      setUploadProgress(null);
+      setTransferProgress(null);
       setExportJobs((current) => ({ ...current, [kind]: job }));
     } catch (error) {
+      setUploadingKind(null);
+      setUploadProgress(null);
+      setTransferProgress(null);
       setExportJobs((current) => ({ ...current, [kind]: null }));
       setStartedAt((current) => { const next = { ...current }; delete next[kind]; return next; });
       setExportErrors((current) => ({ ...current, [kind]: error instanceof Error ? error.message : 'Could not start export' }));
@@ -87,18 +109,20 @@ export default function ExportCards() {
       <article className="rounded-2xl border border-gray-700/80 bg-[#202329] p-3.5">
         <div className="flex items-start gap-3"><FileText size={19} className="mt-0.5 shrink-0 text-gray-200" /><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold">.SRT file</h3><span className="rounded-full border border-gray-600 px-2.5 py-1 text-[10px] text-gray-300">Fastest</span></div><p className="mt-1 text-xs leading-relaxed text-gray-400">Timed subtitle file you can import into Premiere, Resolve, Final Cut, or CapCut.</p><div className="mt-3 flex items-center gap-3"><button type="button" onClick={() => download('srt')} className="rounded-lg bg-[#dc735c] px-3 py-1.5 text-xs font-semibold text-[#241916] hover:bg-[#e88770]">Download .SRT</button><button type="button" onClick={() => download('vtt')} className="text-xs font-semibold text-gray-300 underline decoration-gray-600 underline-offset-4 hover:text-white">.VTT</button></div></div></div>
       </article>
-      <ExportCard kind="greenscreen" icon={<Film size={19} />} title="Green-screen layer (.mp4)" badge="Fast" description="Captions on solid green. Import it into Premiere, Resolve, Final Cut, or CapCut and remove the green with chroma key." job={exportJobs.greenscreen} error={exportErrors.greenscreen} busy={running} startedAt={startedAt.greenscreen} onStart={runExport} onCancel={stopExport} projectId={projectId} />
-      <ExportCard kind="video" icon={<Film size={19} />} title="Export complete video" badge="Slow" description="Captions are burned into your uploaded video so it is ready to share." job={exportJobs.video} error={exportErrors.video} busy={running} startedAt={startedAt.video} onStart={runExport} onCancel={stopExport} projectId={projectId} />
+      <ExportCard kind="greenscreen" icon={<Film size={19} />} title="Green-screen layer (.mp4)" badge="Fast" description="Captions on solid green. Import it into Premiere, Resolve, Final Cut, or CapCut and remove the green with chroma key." job={exportJobs.greenscreen} error={exportErrors.greenscreen} busy={running} startedAt={startedAt.greenscreen} onStart={runExport} onCancel={stopExport} projectId={projectId} uploadProgress={uploadingKind === 'greenscreen' ? uploadProgress : null} />
+      <ExportCard kind="video" icon={<Film size={19} />} title="Export complete video" badge="Slow" description="Captions are burned into your uploaded video so it is ready to share." job={exportJobs.video} error={exportErrors.video} busy={running} startedAt={startedAt.video} onStart={runExport} onCancel={stopExport} projectId={projectId} uploadProgress={uploadingKind === 'video' ? uploadProgress : null} />
     </div>
   </section>;
 }
 
-function ExportCard({ icon, title, badge, description, kind, job, error, busy, startedAt, onStart, onCancel, projectId }: { icon: React.ReactNode; title: string; badge: string; description: string; kind: 'video' | 'greenscreen'; job?: ExportJob | null; error?: string; busy: boolean; startedAt?: number; onStart: (kind: 'video' | 'greenscreen') => void; onCancel: (kind: 'video' | 'greenscreen', jobId: string) => void; projectId: string | null }) {
+function ExportCard({ icon, title, badge, description, kind, job, error, busy, startedAt, onStart, onCancel, projectId, uploadProgress }: { icon: React.ReactNode; title: string; badge: string; description: string; kind: 'video' | 'greenscreen'; job?: ExportJob | null; error?: string; busy: boolean; startedAt?: number; onStart: (kind: 'video' | 'greenscreen') => void; onCancel: (kind: 'video' | 'greenscreen', jobId: string) => void; projectId: string | null; uploadProgress?: TransferProgressData | null }) {
   const finished = job?.status === 'done';
   const elapsed = startedAt ? Date.now() - startedAt : 0;
   const preparingFonts = Boolean(job && (job.status === 'queued' || job.status === 'running') && elapsed >= 60_000 && (job.percent === 0 || job.percent === null));
   return <article className="rounded-2xl border border-gray-700/80 bg-[#202329] p-3.5"><div className="flex items-start gap-3"><span className="mt-0.5 shrink-0 text-gray-300">{icon}</span><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold">{title}</h3><span className="shrink-0 rounded-full border border-gray-600 px-2.5 py-1 text-[10px] text-gray-300">{badge}</span></div><p className="mt-1 text-xs leading-relaxed text-gray-400">{description}</p>
-    {job && (job.status === 'queued' || job.status === 'running') ? <div className="mt-3"><div className="flex items-center gap-1.5 text-[11px] text-gray-300"><LoaderCircle size={13} className="animate-spin" />{job.step}<span className="ml-auto tabular-nums">{job.indeterminate || job.percent === null ? 'Progress unavailable' : `${job.percent}%`}</span><button type="button" onClick={() => onCancel(kind, job.job_id)} className="ml-2 rounded-md border border-gray-600 px-2 py-1 text-[10px] text-gray-300 hover:border-red-400 hover:text-red-200">Cancel</button></div>{job.indeterminate || job.percent === null ? <p className="mt-2 text-[11px] text-gray-500">The source duration is unknown, so progress cannot be estimated.</p> : <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-700"><div className="h-full rounded-full bg-[#dc735c] transition-all" style={{ width: `${Math.max(0, Math.min(100, job.percent || 0))}%` }} /></div>}{preparingFonts && <p className="mt-2 text-[11px] text-amber-200">Preparing fonts, first export can take longer.</p>}</div> : finished ? <a href={`${backendUrl}/projects/${encodeURIComponent(projectId || '')}/export/${kind}/download`} className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#dc735c] px-3 py-1.5 text-xs font-semibold text-[#241916] hover:bg-[#e88770]"><Download size={14} />Download .MP4</a> : <button type="button" disabled={busy} onClick={() => onStart(kind)} className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-gray-600 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:border-[#dc735c] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"><Clock3 size={13} />{job?.status === 'error' ? 'Try again' : 'Export .MP4'}</button>}
+    {uploadProgress && <div className="mt-3"><TransferProgress progress={uploadProgress} label="Uploading video for export" /></div>}
+    {job && (job.status === 'queued' || job.status === 'running') ? <div className="mt-3"><div className="flex items-center gap-1.5 text-[11px] text-gray-300"><LoaderCircle size={13} className="animate-spin" />{job.step}<span className="ml-auto tabular-nums">{job.indeterminate || job.percent === null ? 'Progress unavailable' : `${job.percent}%`}</span><button type="button" onClick={() => onCancel(kind, job.job_id)} className="ml-2 rounded-md border border-gray-600 px-2 py-1 text-[10px] text-gray-300 hover:border-red-400 hover:text-red-200">Cancel</button></div>{job.indeterminate || job.percent === null ? <p className="mt-2 text-[11px] text-gray-500">The source duration is unknown, so progress cannot be estimated.</p> : <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-700"><div className="h-full rounded-full bg-[#dc735c] transition-all" style={{ width: `${Math.max(0, Math.min(100, job.percent || 0))}%` }} /></div>}{job.remaining_seconds != null && <p className="mt-1 text-[11px] text-gray-400">About {job.remaining_seconds}s remaining</p>}
+{preparingFonts && <p className="mt-2 text-[11px] text-amber-200">Preparing fonts, first export can take longer.</p>}</div> : finished ? <a href={`${backendUrl}/projects/${encodeURIComponent(projectId || '')}/export/${kind}/download`} className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#dc735c] px-3 py-1.5 text-xs font-semibold text-[#241916] hover:bg-[#e88770]"><Download size={14} />Download .MP4</a> : <button type="button" disabled={busy} onClick={() => onStart(kind)} className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-gray-600 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:border-[#dc735c] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"><Clock3 size={13} />{job?.status === 'error' ? 'Try again' : 'Export .MP4'}</button>}
     {(error || job?.error) && <p role="alert" className="mt-2 text-xs text-red-300">{error || job?.error}</p>}
     {finished && job?.job_id && projectId && <ExportFeedbackForm key={job.job_id} projectId={projectId} jobId={job.job_id} kind={kind} />}
   </div></div></article>;

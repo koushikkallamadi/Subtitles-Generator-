@@ -7,14 +7,18 @@ import TopBar from "../components/TopBar";
 import { Button, DottedLines, Highlight } from "../components/brand/BrandUI";
 import { BRAND } from "../lib/brand";
 import { useAuth } from "../components/AuthProvider";
-import { backendUrl, fetchProjects, uploadProject } from "../lib/projects";
+import { backendUrl, createAudioProject, fetchProjects, uploadProject } from "../lib/projects";
+import { captureAudioFromVideo } from "../lib/audioCapture";
 import { useVideoStore } from "../store/videoStore";
+import TransferProgress from "../components/TransferProgress";
+import type { TransferProgress as TransferProgressData } from "../lib/uploadRequest";
 
 export default function HomePage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [transferProgress, setTransferProgress] = useState<TransferProgressData | null>(null);
   const [dragging, setDragging] = useState(false);
   const [hasProjects, setHasProjects] = useState(false);
   const { requireLogin, loading: authLoading, user } = useAuth();
@@ -33,19 +37,54 @@ export default function HomePage() {
     }
     setUploadError("");
     setUploading(true);
+    setTransferProgress(null);
+    const state = useVideoStore.getState();
+    const localUrl = URL.createObjectURL(file);
+    state.setVideoData(localUrl, file.name, file.size, 0);
+    state.setLocalVideoFile(file);
+    state.setAudioPreparation("extracting", 0);
+    router.push("/editor");
+
     try {
-      const { language, style } = useVideoStore.getState();
-      const project = await uploadProject(file, language, style);
-      const store = useVideoStore.getState();
-      store.setVideoData(`${backendUrl}/media/${project.id}`, project.title, project.size, project.duration);
-      store.setProjectId(project.id);
-      store.setLanguage(project.language);
-      store.setStyle(project.style);
-      router.push(`/editor?project=${encodeURIComponent(project.id)}`);
-    } catch (error) {
-      setUploadError(error instanceof Error ? error.message : "Upload failed. Please try again.");
+      const captured = await captureAudioFromVideo(file, ({ progress }) => useVideoStore.getState().setAudioPreparation("extracting", progress));
+      useVideoStore.getState().setAudioPreparation("uploading", 0);
+      const project = await createAudioProject(file, captured.file, useVideoStore.getState().language, useVideoStore.getState().style, (progress) => {
+        setTransferProgress(progress);
+        useVideoStore.getState().setTransferProgress(progress);
+        useVideoStore.getState().setAudioPreparation("uploading", progress.percent);
+      });
+      const latest = useVideoStore.getState();
+      latest.setProjectId(project.id);
+      useVideoStore.setState({ duration: project.duration });
+      latest.setProjectMedia(project.media_available, project.audio_available ?? true);
+      latest.setLanguage(project.language);
+      latest.setStyle(project.style);
+      latest.setTransferProgress(null);
+      latest.setAudioPreparation("ready", 100);
+    } catch (audioFirstError) {
+      try {
+        const latest = useVideoStore.getState();
+        latest.setAudioPreparation("uploading-video", 0);
+        const project = await uploadProject(file, latest.language, latest.style, (progress) => {
+          setTransferProgress(progress);
+          useVideoStore.getState().setTransferProgress(progress);
+          useVideoStore.getState().setAudioPreparation("uploading-video", progress.percent);
+        });
+        latest.setVideoData(`${backendUrl}/media/${project.id}`, project.title, project.size, project.duration);
+        latest.setLocalVideoFile(file);
+        latest.setProjectId(project.id);
+        latest.setProjectMedia(project.media_available, project.audio_available ?? false);
+        latest.setAudioPreparation("ready", 100);
+        latest.setTransferProgress(null);
+      } catch (fallbackError) {
+        const message = fallbackError instanceof Error ? fallbackError.message : (audioFirstError instanceof Error ? audioFirstError.message : "Could not prepare this video.");
+        useVideoStore.getState().setAudioPreparation("failed", 0);
+        setUploadError(message);
+      }
     } finally {
       setUploading(false);
+      setTransferProgress(null);
+      useVideoStore.getState().setTransferProgress(null);
     }
   };
 
@@ -88,10 +127,11 @@ export default function HomePage() {
               <p className="mt-5 max-w-[620px] text-base leading-7 text-muted sm:mt-6 sm:text-lg sm:leading-8">Turn Hindi, Telugu, and more into captions people love to read. Choose Hinglish, Tenglish, or native scripts. Edit every word, perfect the timing, and make each reel yours.</p>
               <div className="mt-6 flex flex-wrap items-center gap-3 sm:mt-7">
                 <Button type="button" onClick={() => void requireLogin(() => fileInputRef.current?.click(), "/")} disabled={uploading || authLoading} className="min-h-12 px-7 text-sm disabled:cursor-wait disabled:opacity-60">
-                  <ArrowUpFromLine size={18} />{uploading ? "Uploading video…" : "Start free"}
+                  <ArrowUpFromLine size={18} />{uploading ? "Preparing video…" : "Start free"}
                 </Button>
                 <Button href="/upload" variant="secondary" className="min-h-12 px-7 text-sm"><Sparkles size={17} /> See them write</Button>
               </div>
+              {uploading && <TransferProgress progress={transferProgress} />}
               <div className="mt-5 flex flex-wrap items-center gap-2.5 sm:mt-6 sm:gap-3">
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-[#E6E1DB] bg-white px-3 py-1.5 text-[11px] font-semibold text-muted shadow-[0_3px_10px_rgba(17,17,17,.06)] sm:px-3.5 sm:text-xs"><CheckCircle2 size={15} className="text-[#D65A26]" /> Hinglish</span>
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-[#E6E1DB] bg-white px-3 py-1.5 text-[11px] font-semibold text-muted shadow-[0_3px_10px_rgba(17,17,17,.06)] sm:px-3.5 sm:text-xs"><CheckCircle2 size={15} className="text-[#D65A26]" /> Tenglish</span>

@@ -3,6 +3,7 @@ import tempfile
 import logging
 import asyncio
 import math
+import time
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, BackgroundTasks, HTTPException, Depends
@@ -14,7 +15,7 @@ from app.services.media import extract_audio
 from app.services.media import get_media_duration
 from app.services.transcription.manager import transcription_manager
 from app.services.segmentation import cues_from_transcription
-from app.api.projects import project_media_path
+from app.api.projects import project_media_path, project_transcription_audio_path
 from app.db import SessionLocal
 from app.models import Cue, Project
 from app.models import User
@@ -85,15 +86,19 @@ async def process_transcription_job(
 ):
     temp_audio_path = None
     transcription_started = False
+    job_started = time.perf_counter()
     try:
         job_store.update(job_id, status="processing", progress=15)
         logger.info(f"Job {job_id}: Extracting audio from {temp_input_path}...")
 
         # Extract audio using ffmpeg
         loop = asyncio.get_event_loop()
+        stage_started = time.perf_counter()
         temp_audio_path = await loop.run_in_executor(
             None, extract_audio, temp_input_path
         )
+        audio_bytes = os.path.getsize(temp_audio_path) if os.path.isfile(temp_audio_path) else 0
+        logger.info("transcription stage=extract_audio seconds=%.3f input_bytes=%d output_bytes=%d", time.perf_counter() - stage_started, os.path.getsize(temp_input_path) if os.path.isfile(temp_input_path) else 0, audio_bytes)
         job_store.update(job_id, progress=35)
 
         # Transcribe with fallback
@@ -101,12 +106,14 @@ async def process_transcription_job(
             f"Job {job_id}: Transcribing audio (lang={language}, style={style}, provider={provider})..."
         )
         transcription_started = True
+        stage_started = time.perf_counter()
         result = await transcription_manager.transcribe_with_fallback(
             audio_path=temp_audio_path,
             language=language,
             style=style,
             requested_provider=provider,
         )
+        logger.info("transcription stage=provider seconds=%.3f audio_bytes=%d", time.perf_counter() - stage_started, audio_bytes)
         if result.provider == "none" and user_id:
             _refund_credits(user_id, reserved_credits)
             reserved_credits = 0.0
@@ -114,6 +121,7 @@ async def process_transcription_job(
 
         # Segment words into subtitle cues
         logger.info(f"Job {job_id}: Generating subtitle cues...")
+        stage_started = time.perf_counter()
         cues = cues_from_transcription(result)
         if project_id:
             with SessionLocal() as db:
@@ -126,6 +134,7 @@ async def process_transcription_job(
                     project.style = style or project.style
                     project.updated_at = datetime.utcnow()
                     db.commit()
+            logger.info("transcription stage=segment_and_save seconds=%.3f cues=%d", time.perf_counter() - stage_started, len(cues))
         job_store.update(job_id, progress=95)
 
         # Mark completed
@@ -144,6 +153,7 @@ async def process_transcription_job(
             f"Job {job_id} successfully completed with provider '{result.provider}'. "
             f"Generated {len(cues)} cues."
         )
+        logger.info("transcription stage=complete seconds=%.3f audio_bytes=%d cues=%d", time.perf_counter() - job_started, audio_bytes, len(cues))
 
     except Exception as e:
         if not transcription_started and user_id:
@@ -184,14 +194,19 @@ async def start_transcription(
 ):
     project_duration = 0.0
     project_source = None
+    project_audio_source = False
     if project_id:
         with SessionLocal() as db:
             project = owned_project(db, project_id, user)
             project_duration = float(project.duration or 0.0)
             project_source = project_media_path(project_id)
+            if project_source is None:
+                project_source = project_transcription_audio_path(project_id)
+                project_audio_source = project_source is not None
     cleanup_input = True
     if file is not None:
         os.makedirs(settings.TEMP_DIR, exist_ok=True)
+        upload_started = time.perf_counter()
         suffix = os.path.splitext(file.filename or "")[1] or ".mp4"
         size = 0
         try:
@@ -200,7 +215,7 @@ async def start_transcription(
                 while chunk := await file.read(1024 * 1024):
                     size += len(chunk)
                     if size > settings.MAX_UPLOAD_MB * 1024 * 1024:
-                        raise HTTPException(status_code=413, detail=f"Upload exceeds the {settings.MAX_UPLOAD_MB} MB limit")
+                        raise HTTPException(status_code=413, detail=f"Upload exceeds the {settings.MAX_UPLOAD_MB} MB limit. Raise MAX_UPLOAD_MB (for example, 500) to allow full-quality video exports.")
                     temp_file.write(chunk)
         except Exception:
             if "temp_input_path" in locals():
@@ -208,7 +223,10 @@ async def start_transcription(
             raise
         finally:
             await file.close()
+        logger.info("transcription stage=receive_audio_upload seconds=%.3f bytes=%d", time.perf_counter() - upload_started, size)
+        probe_started = time.perf_counter()
         input_duration = get_media_duration(temp_input_path)
+        logger.info("transcription stage=probe_uploaded_media seconds=%.3f bytes=%d", time.perf_counter() - probe_started, size)
         if input_duration <= 0:
             _remove_temp_file(temp_input_path)
             raise HTTPException(status_code=422, detail="Could not read the video duration")
@@ -219,7 +237,7 @@ async def start_transcription(
         if project_source is None:
             raise HTTPException(status_code=404, detail="Project media not found")
         temp_input_path = str(project_source)
-        input_duration = project_duration or get_media_duration(temp_input_path)
+        input_duration = get_media_duration(temp_input_path) if project_audio_source else project_duration or get_media_duration(temp_input_path)
         if input_duration <= 0:
             raise HTTPException(status_code=422, detail="Could not read the video duration")
         if input_duration > settings.MAX_VIDEO_SECONDS:
