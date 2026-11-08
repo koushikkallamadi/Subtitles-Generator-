@@ -82,6 +82,21 @@ def _set_session(response: Response, user_id: str) -> None:
     response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_SECONDS, httponly=True, secure=secure, samesite="None" if secure else "Lax", path="/")
 
 
+def _delete_session_cookie(response: Response) -> None:
+    secure = _secure_cookie()
+    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, secure=secure, samesite="None" if secure else "Lax")
+
+
+def _delete_flow_cookie(response: Response) -> None:
+    secure = _secure_cookie()
+    response.delete_cookie(FLOW_COOKIE, path="/auth/google", httponly=True, secure=secure, samesite="Lax")
+
+
+def _delete_auth_cookies(response: Response) -> None:
+    _delete_session_cookie(response)
+    _delete_flow_cookie(response)
+
+
 def _rate_limit(request: Request, route: str) -> None:
     key = f"{route}:{request.client.host if request.client else 'unknown'}"
     now = time.monotonic()
@@ -142,16 +157,16 @@ async def google_callback(request: Request, code: str | None = None, state: str 
     _rate_limit(request, "callback")
     if error == "access_denied":
         response = RedirectResponse(f"{settings.FRONTEND_URL.rstrip('/')}/login?error=cancelled", status_code=302)
-        response.delete_cookie(FLOW_COOKIE, path="/auth/google")
+        _delete_flow_cookie(response)
         return response
     flow = _read_signed(request.cookies.get(FLOW_COOKIE), "oauth_flow")
     if not flow or not state or not hmac.compare_digest(str(flow.get("state", "")), state):
         response = RedirectResponse(f"{settings.FRONTEND_URL.rstrip('/')}/login?error=invalid_state", status_code=302)
-        response.delete_cookie(FLOW_COOKIE, path="/auth/google")
+        _delete_flow_cookie(response)
         return response
     if not code:
         response = RedirectResponse(f"{settings.FRONTEND_URL.rstrip('/')}/login?error=missing_code", status_code=302)
-        response.delete_cookie(FLOW_COOKIE, path="/auth/google")
+        _delete_flow_cookie(response)
         return response
     stage = "token_exchange"
     try:
@@ -174,14 +189,14 @@ async def google_callback(request: Request, code: str | None = None, state: str 
             safe_google_error = google_error if google_error in {"invalid_client", "invalid_grant", "unauthorized_client", "redirect_uri_mismatch"} else "unknown"
             logger.warning("Google OAuth token exchange rejected (%s)", safe_google_error)
             response = RedirectResponse(f"{settings.FRONTEND_URL.rstrip('/')}/login?error={failure_code}", status_code=302)
-            response.delete_cookie(FLOW_COOKIE, path="/auth/google")
+            _delete_flow_cookie(response)
             return response
         stage = "identity_verification"
         claims = id_token.verify_oauth2_token(token_data["id_token"], GoogleRequest(), settings.GOOGLE_CLIENT_ID)
         if claims.get("nonce") != flow.get("nonce") or claims.get("email_verified") not in (True, "true"):
             logger.warning("Google OAuth identity verification rejected claims")
             response = RedirectResponse(f"{settings.FRONTEND_URL.rstrip('/')}/login?error=identity_check", status_code=302)
-            response.delete_cookie(FLOW_COOKIE, path="/auth/google")
+            _delete_flow_cookie(response)
             return response
         now = datetime.utcnow()
         stage = "user_update"
@@ -203,17 +218,17 @@ async def google_callback(request: Request, code: str | None = None, state: str 
         secure = _secure_cookie()
         same_site = "None" if secure else "Lax"
         logger.info("Google OAuth callback issued session cookie (SameSite=%s, Secure=%s); redirecting to frontend host %s", same_site, secure, urlparse(settings.FRONTEND_URL).netloc)
-        response.delete_cookie(FLOW_COOKIE, path="/auth/google")
+        _delete_flow_cookie(response)
         return response
     except httpx.RequestError as exc:
         logger.warning("Google OAuth failed during %s (%s)", stage, type(exc).__name__)
         response = RedirectResponse(f"{settings.FRONTEND_URL.rstrip('/')}/login?error=oauth_unavailable", status_code=302)
-        response.delete_cookie(FLOW_COOKIE, path="/auth/google")
+        _delete_flow_cookie(response)
         return response
     except Exception as exc:
         logger.warning("Google OAuth failed during %s (%s)", stage, type(exc).__name__)
         response = RedirectResponse(f"{settings.FRONTEND_URL.rstrip('/')}/login?error=oauth_failed", status_code=302)
-        response.delete_cookie(FLOW_COOKIE, path="/auth/google")
+        _delete_flow_cookie(response)
         return response
 
 
@@ -225,6 +240,6 @@ def auth_me(user: User = Depends(get_current_user)):
 @router.post("/logout")
 def auth_logout():
     response = Response(content=json.dumps({"logged_out": True}), media_type="application/json")
-    response.delete_cookie(SESSION_COOKIE, path="/")
-    response.delete_cookie(FLOW_COOKIE, path="/auth/google")
+    _delete_auth_cookies(response)
     return response
+
